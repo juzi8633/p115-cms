@@ -6,6 +6,8 @@ FROM python:3.11-slim
 # 2. 设置容器内的工作目录
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y gcc build-essential
+
 # 3. 复制依赖文件到工作目录
 # (将这步和下一步分开，可以利用Docker的层缓存机制，在依赖不变时加快构建速度)
 COPY requirements.txt .
