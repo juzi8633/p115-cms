@@ -64,7 +64,6 @@ async def check_share_status_task():
     if not p115_client: return
 
     async with task_lock:
-        # ↓↓↓ 已将此行代码移入 task_lock 内部 ↓↓↓
         log.info("【任务开始】分享状态检查...")
         BATCH_SIZE = int(APP_CONFIG.get("task_batch_size", 5))
         API_SLEEP_INTERVAL = int(APP_CONFIG.get("task_api_sleep_seconds", 15))
@@ -80,7 +79,7 @@ async def check_share_status_task():
 
         if not entries_to_process:
             log.info("没有需要检查或同步的分享记录。")
-            log.info("【任务结束】分享状态检查完成。") # 在没有任务时也明确结束
+            log.info("【任务结束】分享状态检查完成。")
             return
 
         log.info(f"本次需处理 {len(entries_to_process)} 个分享。")
@@ -128,44 +127,60 @@ async def check_share_status_task():
                 continue
         log.info("【任务结束】分享状态检查完成。")
 
+# ↓↓↓ 已重构此函数以确保事务原子性 ↓↓↓
 async def delete_synced_files_task_unit() -> bool:
     log.info("🧹 开始执行一个清理批次...")
     BATCH_SIZE = int(APP_CONFIG.get("delete_task_batch_size", 10))
     SLEEP_INTERVAL = int(APP_CONFIG.get("delete_task_sleep_seconds", 30))
 
+    share_urls_to_process = []
     async with get_session() as session:
-        query = select(Shares).filter_by(status=4).limit(BATCH_SIZE)
+        query = select(Shares.share_url).filter_by(status=4).limit(BATCH_SIZE)
         result = await session.execute(query)
-        batch_to_delete = result.scalars().all()
+        share_urls_to_process = result.scalars().all()
 
-        if not batch_to_delete:
-            log.info("✅ 没有待清理记录。")
-            return True
+    if not share_urls_to_process:
+        log.info("✅ 没有待清理记录。")
+        return True
 
-        log.info(f"本批次处理 {len(batch_to_delete)} 个待清理项。")
+    log.info(f"本批次处理 {len(share_urls_to_process)} 个待清理项。")
 
-        for i, entry in enumerate(batch_to_delete):
-            file_ids = json.loads(entry.shared_cids) if entry.shared_cids else None
-            
-            if not file_ids:
-                entry.status = 5
-                continue
+    for i, share_url in enumerate(share_urls_to_process):
+        try:
+            async with get_session() as session:
+                query = select(Shares).filter_by(share_url=share_url)
+                result = await session.execute(query)
+                entry = result.scalar_one_or_none()
 
-            delete_payload = ",".join(map(str, file_ids))
-            delete_response = await asyncio.to_thread(p115_client.fs_delete, delete_payload)
-            
-            if delete_response.get("state"):
-                log.info(f"✅ 文件已删除: {entry.share_title}")
-                entry.status = 5
-            else:
-                log.warning(f"❗ 文件删除失败: {entry.share_title} - 原因: {delete_response.get('error', '未知错误')}")
-                entry.status = 6
-            
-            if i < len(batch_to_delete) - 1:
-                log.debug(f"文件处理间隔休眠 {SLEEP_INTERVAL} 秒...")
-                await asyncio.sleep(SLEEP_INTERVAL)
+                if not entry:
+                    log.warning(f"记录 {share_url} 在处理时未找到，可能已被其他进程处理。")
+                    continue
+
+                file_ids = json.loads(entry.shared_cids) if entry.shared_cids else None
+                
+                if not file_ids:
+                    entry.status = 5
+                    log.info(f"记录 '{entry.share_title}' 无文件ID，直接标记为完成。")
+                    continue
+
+                delete_payload = ",".join(map(str, file_ids))
+                delete_response = await asyncio.to_thread(p115_client.fs_delete, delete_payload)
+                
+                if delete_response.get("state"):
+                    log.info(f"✅ 文件已删除: {entry.share_title}")
+                    entry.status = 5
+                else:
+                    log.warning(f"❗ 文件删除失败: {entry.share_title} - 原因: {delete_response.get('error', '未知错误')}")
+                    entry.status = 6
         
-        return len(batch_to_delete) < BATCH_SIZE
+        except Exception as e:
+            log.error(f"处理分享 {share_url} 时发生意外数据库或IO错误", exc_info=True)
+
+        if i < len(share_urls_to_process) - 1:
+            log.debug(f"文件处理间隔休眠 {SLEEP_INTERVAL} 秒...")
+            await asyncio.sleep(SLEEP_INTERVAL)
+            
+    return len(share_urls_to_process) < BATCH_SIZE
 
 async def master_cleanup_task():
     log.info(f"【任务开始】总清理任务启动...")
@@ -198,7 +213,7 @@ async def master_cleanup_task():
 
 async def send_daily_summary_task():
     log.info("【任务开始】生成并发送每日摘要...")
-    status_counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0} 
+    status_counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0}
     total_shares = 0
     try:
         async with get_session() as session:
