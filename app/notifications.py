@@ -1,0 +1,88 @@
+# app/notifications.py
+import re
+from datetime import datetime
+import pytz
+from typing import Dict, Any
+from app import http_client, APP_CONFIG
+
+async def send_feishu_card_notification(title: str, text_content: str, color: str = "blue"):
+    """发送一个通用的飞书卡片通知。"""
+    feishu_url = APP_CONFIG.get("feishu_webhook_url")
+    if not feishu_url:
+        return
+
+    payload = {
+        "msg_type": "interactive",
+        "card": {
+            "config": {"wide_screen_mode": True},
+            "header": {"title": {"tag": "plain_text", "content": title}, "template": color},
+            "elements": [{"tag": "div", "text": {"tag": "lark_md", "content": text_content}}]
+        }
+    }
+    try:
+        await http_client.post(feishu_url, json=payload, timeout=10)
+    except Exception as e:
+        print(f"[FEISHU] 发送通用通知失败: {e}")
+
+async def send_feishu_notification_from_emby(payload: Dict[str, Any]):
+    """处理 Emby webhook payload 并发送飞书通知。"""
+    feishu_url = APP_CONFIG.get("feishu_webhook_url")
+    if not feishu_url:
+        print("[EMBY WEBHOOK] 未配置飞书 Webhook URL，跳过通知。")
+        return
+
+    event_type = payload.get("Event", "unknown_event")
+    item_data = payload.get("Item", {})
+    
+    card_title = "【Emby】媒体通知"
+    template_color = "blue"
+    card_elements = []
+
+    if event_type == "library.new":
+        template_color = "green"
+        item_type = item_data.get("Type")
+        overview = item_data.get("Overview", "暂无简介")
+        if overview and len(overview) > 100:
+            overview = overview[:100] + "..."
+            
+        update_time_text = ""
+        if date_str := payload.get("Date"):
+            try:
+                utc_time = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                local_tz = pytz.timezone('Asia/Shanghai')
+                local_time = utc_time.astimezone(local_tz)
+                update_time_text = local_time.strftime('%Y-%m-%d %H:%M:%S')
+            except Exception: pass
+
+        plain_text_title = item_data.get("Name", "未知项目")
+        if item_type == "Episode":
+            series_name = item_data.get("SeriesName", "未知剧集")
+            season_num = item_data.get("ParentIndexNumber", 0)
+            episode_num = item_data.get("IndexNumber", 0)
+            plain_text_title = f"{series_name} S{season_num:02d}E{episode_num:02d}"
+        
+        card_title = f"{plain_text_title} 已入库"
+        
+        if update_time_text:
+            card_elements.append({"tag": "note", "elements": [{"tag": "plain_text", "content": f"更新于: {update_time_text}"}]})
+        card_elements.append({"tag": "hr"})
+        card_elements.append({"tag": "div", "text": {"tag": "lark_md", "content": overview}})
+
+    elif event_type in ["library.deleted"]:
+        template_color = "red"
+        card_title = payload.get("Title", "媒体已删除")
+        card_elements = [{"tag": "div", "text": {"tag": "lark_md", "content": card_title}}]
+    else:
+        return
+
+    if path := item_data.get("Path"):
+        display_path = re.sub(r'^/mnt/user/downloads/done/', '', path)
+        card_elements.append({"tag": "hr"})
+        card_elements.append({"tag": "note", "elements": [{"tag": "plain_text", "content": f"路径: {display_path}"}]})
+
+    feishu_payload = {"msg_type": "interactive","card": {"config": {"wide_screen_mode": True},"header": {"title": {"tag": "plain_text", "content": card_title}, "template": template_color},"elements": card_elements}}
+    
+    try:
+        await http_client.post(feishu_url, json=feishu_payload, timeout=10)
+    except Exception as e:
+        print(f"[EMBY WEBHOOK] 发送飞书通知失败: {e}")
