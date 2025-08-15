@@ -3,11 +3,16 @@ import time
 import json
 import traceback
 import asyncio
+import logging
 from datetime import datetime
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from app import scheduler, p115_client, APP_CONFIG, task_lock, http_client, app
 from app.notifications import send_feishu_card_notification
 from app.database import get_session, Shares
+
+log = logging.getLogger(__name__)
+
+STATUS_TEXT_MAP = {0: "审核中", 1: "正常", 2: "违规", 3: "已失效", 4: "已入库", 5: "已完成", 6: "清理失败"}
 
 # --- 任务辅助函数 ---
 async def _sync_to_cms(entry):
@@ -39,80 +44,92 @@ async def _refresh_emby_library():
     api_key = APP_CONFIG.get("emby_api_key")
 
     if not (emby_domain and api_key):
-        print("[INFO] Emby 未配置，跳过媒体库刷新。")
+        log.info("Emby 未配置，跳过媒体库刷新。")
         return
 
     url = f"{emby_domain.rstrip('/')}/Library/Refresh"
     headers = {"X-Emby-Token": api_key, "Content-Type": "application/json"}
     
-    print("[EMBY] 触发 Emby 媒体库刷新...")
+    log.info("正在触发 Emby 媒体库刷新...")
     try:
         response = await http_client.post(url, headers=headers, timeout=15)
         response.raise_for_status()
-        print("[EMBY] ✅ Emby 媒体库刷新请求已成功发送。")
+        log.info("✅ Emby 媒体库刷新请求已成功发送。")
     except Exception as e:
-        print(f"[EMBY] ❌ 发送 Emby 刷新请求失败: {e}")
+        log.error(f"❌ 发送 Emby 刷新请求失败: {e}", exc_info=True)
         raise e
 
 # --- 核心任务函数 ---
 async def check_share_status_task():
-    print(f"\n[TASK] 🕒 {time.strftime('%Y-%m-%d %H:%M:%S')} - 开始执行分享状态检查任务 (异步批处理)...")
     if not p115_client: return
 
     async with task_lock:
-        try:
-            BATCH_SIZE = int(APP_CONFIG.get("task_batch_size", 5))
-            API_SLEEP_INTERVAL = int(APP_CONFIG.get("task_api_sleep_seconds", 15))
+        # ↓↓↓ 已将此行代码移入 task_lock 内部 ↓↓↓
+        log.info("【任务开始】分享状态检查...")
+        BATCH_SIZE = int(APP_CONFIG.get("task_batch_size", 5))
+        API_SLEEP_INTERVAL = int(APP_CONFIG.get("task_api_sleep_seconds", 15))
 
+        try:
             async with get_session() as session:
                 query = select(Shares).filter(Shares.status.in_([0, 1])).limit(BATCH_SIZE)
                 result = await session.execute(query)
-                entries_to_process = result.scalars().all()
-
-                if not entries_to_process:
-                    print("[TASK] ✅ 没有需要检查或同步的分享记录。")
-                    return
-
-                print(f"[TASK] 本次处理 {len(entries_to_process)} 个待处理项。")
-
-                for entry in entries_to_process:
-                    new_status = entry.status
-                    if str(entry.status) != '1':
-                        print(f"[TASK] 正在检查分享: {entry.share_title or 'N/A'}")
-                        info_data = await asyncio.to_thread(p115_client.share_info_app, {"share_code": entry.share_code})
-                        if info_data.get("state"):
-                            new_status = info_data.get("data", {}).get("share_state")
-                        elif "已取消" in info_data.get('error', ''):
-                            new_status = 3
-                    
-                    if str(new_status) == '1':
-                        print(f"[TASK] 正在同步到CMS: {entry.share_title or 'N/A'}")
-                        entry_dict = {c.name: getattr(entry, c.name) for c in entry.__table__.columns}
-                        success, message = await _sync_to_cms(entry_dict)
-                        if success:
-                            new_status = 4
-                        else:
-                            print(f"[TASK] ❗ 同步失败: {message}")
-                    
-                    if new_status != entry.status:
-                        entry.status = new_status
-                        print(f"[TASK] 💾 分享 {entry.share_title} 状态更新为 {new_status}。")
-
-                    print(f"[TASK] ⏸️ API 调用间隔休眠 {API_SLEEP_INTERVAL} 秒...")
-                    await asyncio.sleep(API_SLEEP_INTERVAL)
+                entries_to_process = [{c.name: getattr(row[0], c.name) for c in row[0].__table__.columns} for row in result.fetchall()]
         except Exception as e:
-            await db.session.rollback()
-            full_traceback = traceback.format_exc()
-            print(f"[TASK] ❌ 分享状态检查任务执行失败: {e}\n{full_traceback}")
-            error_msg = (
-                f"**失败模块**: 分享审核任务\n"
-                f"**失败时间**: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"**错误详情**: ```\n{full_traceback}\n```"
-            )
-            await send_feishu_card_notification("【❌ 任务失败】115 智能管理器告警", error_msg, "red")
+            log.error(f"获取待处理任务批次时发生数据库错误", exc_info=True)
+            return
+
+        if not entries_to_process:
+            log.info("没有需要检查或同步的分享记录。")
+            log.info("【任务结束】分享状态检查完成。") # 在没有任务时也明确结束
+            return
+
+        log.info(f"本次需处理 {len(entries_to_process)} 个分享。")
+
+        for i, entry_data in enumerate(entries_to_process):
+            try:
+                current_status = entry_data['status']
+                new_status = current_status
+
+                if str(current_status) != '1':
+                    log.debug(f"正在检查分享: {entry_data.get('share_title', 'N/A')}")
+                    info_data = await asyncio.to_thread(p115_client.share_info_app, {"share_code": entry_data["share_code"]})
+                    if info_data.get("state"):
+                        new_status = info_data.get("data", {}).get("share_state")
+                    elif "已取消" in info_data.get('error', ''):
+                        new_status = 3
+                
+                if str(new_status) == '1':
+                    log.debug(f"正在同步到CMS: {entry_data.get('share_title', 'N/A')}")
+                    success, message = await _sync_to_cms(entry_data)
+                    if success:
+                        new_status = 4
+                    else:
+                        log.warning(f"同步失败: {message}")
+                
+                if new_status != current_status:
+                    async with get_session() as session:
+                        update_stmt = update(Shares).where(Shares.share_url == entry_data['share_url']).values(status=new_status)
+                        await session.execute(update_stmt)
+                    current_status_text = STATUS_TEXT_MAP.get(current_status, '未知')
+                    new_status_text = STATUS_TEXT_MAP.get(new_status, '未知')
+                    log.info(f"分享状态变更: '{entry_data.get('share_title')}' 从 [{current_status_text}] -> [{new_status_text}]")
+
+                if i < len(entries_to_process) - 1:
+                    log.debug(f"API 调用间隔休眠 {API_SLEEP_INTERVAL} 秒...")
+                    await asyncio.sleep(API_SLEEP_INTERVAL)
+
+            except Exception as e:
+                log.error(f"处理分享 {entry_data.get('share_url')} 时失败", exc_info=True)
+                await send_feishu_card_notification(
+                    "【❌ 单项任务失败】115 智能管理器告警",
+                    f"处理分享`{entry_data.get('share_title')}`时发生错误:\n```{e}```",
+                    "orange"
+                )
+                continue
+        log.info("【任务结束】分享状态检查完成。")
 
 async def delete_synced_files_task_unit() -> bool:
-    print(f"[CLEANUP_UNIT] 🧹 开始执行一个清理批次...")
+    log.info("🧹 开始执行一个清理批次...")
     BATCH_SIZE = int(APP_CONFIG.get("delete_task_batch_size", 10))
     SLEEP_INTERVAL = int(APP_CONFIG.get("delete_task_sleep_seconds", 30))
 
@@ -122,12 +139,12 @@ async def delete_synced_files_task_unit() -> bool:
         batch_to_delete = result.scalars().all()
 
         if not batch_to_delete:
-            print("[CLEANUP_UNIT] ✅ 没有待清理记录。")
+            log.info("✅ 没有待清理记录。")
             return True
 
-        print(f"[CLEANUP_UNIT] 本次处理 {len(batch_to_delete)} 个待清理项。")
+        log.info(f"本批次处理 {len(batch_to_delete)} 个待清理项。")
 
-        for entry in batch_to_delete:
+        for i, entry in enumerate(batch_to_delete):
             file_ids = json.loads(entry.shared_cids) if entry.shared_cids else None
             
             if not file_ids:
@@ -138,20 +155,20 @@ async def delete_synced_files_task_unit() -> bool:
             delete_response = await asyncio.to_thread(p115_client.fs_delete, delete_payload)
             
             if delete_response.get("state"):
-                print(f"[CLEANUP_UNIT] ✅ 文件删除成功: {entry.share_title}")
+                log.info(f"✅ 文件已删除: {entry.share_title}")
                 entry.status = 5
             else:
-                print(f"[CLEANUP_UNIT] ❗ 文件删除失败: {delete_response.get('error', '未知错误')}")
+                log.warning(f"❗ 文件删除失败: {entry.share_title} - 原因: {delete_response.get('error', '未知错误')}")
+                entry.status = 6
             
-            print(f"[CLEANUP_UNIT] ⏸️ 文件处理间隔休眠 {SLEEP_INTERVAL} 秒...")
-            await asyncio.sleep(SLEEP_INTERVAL)
+            if i < len(batch_to_delete) - 1:
+                log.debug(f"文件处理间隔休眠 {SLEEP_INTERVAL} 秒...")
+                await asyncio.sleep(SLEEP_INTERVAL)
         
-        count_query = select(func.count()).select_from(Shares).filter_by(status=4)
-        result = await session.execute(count_query)
-        return result.scalar_one() == 0
+        return len(batch_to_delete) < BATCH_SIZE
 
 async def master_cleanup_task():
-    print(f"\n[MASTER_CLEANUP] ︻╦╤─ {time.strftime('%Y-%m-%d %H:%M:%S')} - 总清理任务启动...")
+    log.info(f"【任务开始】总清理任务启动...")
     if not p115_client: return
     
     async with task_lock:
@@ -160,29 +177,28 @@ async def master_cleanup_task():
             while True:
                 all_done = await delete_synced_files_task_unit()
                 if all_done:
-                    print("[MASTER_CLEANUP] ✅ 所有清理批次均已完成。")
+                    log.info("所有清理批次均已完成。")
                     break
                 
-                print(f"[MASTER_CLEANUP] ⏸️ 批次间休眠 {BATCH_INTERVAL_MINUTES} 分钟...")
+                log.debug(f"批次间休眠 {BATCH_INTERVAL_MINUTES} 分钟...")
                 await asyncio.sleep(BATCH_INTERVAL_MINUTES * 60)
             
-            print("[MASTER_CLEANUP] 🎬 开始执行最终的 Emby 刷新。")
+            log.info("开始执行最终的 Emby 刷新。")
             await _refresh_emby_library()
-            print("[MASTER_CLEANUP] 👍 总清理任务执行完毕。")
+            log.info("【任务结束】总清理任务执行完毕。")
 
         except Exception as e:
-            full_traceback = traceback.format_exc()
-            print(f"[MASTER_CLEANUP] ❌ 总清理任务执行失败: {e}\n{full_traceback}")
+            log.error(f"总清理任务执行失败", exc_info=True)
             error_msg = (
                 f"**失败模块**: 总清理任务\n"
                 f"**失败时间**: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"**错误详情**: ```\n{full_traceback}\n```"
+                f"**错误详情**: ```\n{traceback.format_exc()}\n```"
             )
             await send_feishu_card_notification("【❌ 任务失败】115 智能管理器告警", error_msg, "red")
 
 async def send_daily_summary_task():
-    print(f"[SUMMARY_TASK] 💎 开始生成每日摘要...")
-    status_counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    log.info("【任务开始】生成并发送每日摘要...")
+    status_counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0} 
     total_shares = 0
     try:
         async with get_session() as session:
@@ -196,7 +212,7 @@ async def send_daily_summary_task():
                 if row[0] in status_counts:
                     status_counts[row[0]] = row[1]
     except Exception as e:
-        print(f"[SUMMARY_TASK] ❌ 生成摘要失败: {e}")
+        log.error(f"生成摘要时数据库查询失败", exc_info=True)
         return
 
     report_date = datetime.now().strftime('%Y-%m-%d')
@@ -209,9 +225,10 @@ async def send_daily_summary_task():
         f"- 📦 **已入库**: {status_counts[4]} 条\n"
         f"- 🎉 **已完成**: {status_counts[5]} 条\n"
         f"- 🚫 **违规/失效**: {status_counts[2] + status_counts[3]} 条\n"
+        f"- ❌ **清理失败**: {status_counts.get(6, 0)} 条\n"
     )
     await send_feishu_card_notification(f"【📊 每日报告】115 智能管理器", content, "blue")
-    print(f"[SUMMARY_TASK] ✅ 每日摘要已发送。")
+    log.info("【任务结束】每日摘要已发送。")
 
 def schedule_task():
     if scheduler.get_job('share_check_job'): scheduler.remove_job('share_check_job')
@@ -227,9 +244,9 @@ def schedule_task():
                               minute=cron_parts[0], hour=cron_parts[1], day=cron_parts[2], 
                               month=cron_parts[3], day_of_week=cron_parts[4], 
                               id='share_check_job')
-            print(f"[INFO] 🕒 审核任务已启用，计划: {cron_str}")
+            log.info(f"🕒 审核任务已启用，计划: {cron_str}")
         except Exception as e:
-            print(f"[ERROR] ❌ 无法设置审核任务，请检查 Cron 表达式 '{cron_str}': {e}")
+            log.error(f"无法设置审核任务，请检查 Cron 表达式 '{cron_str}': {e}")
     
     if APP_CONFIG.get("delete_task_enabled"):
         cron_str = APP_CONFIG.get('delete_task_cron', '0 4 * * *')
@@ -240,9 +257,9 @@ def schedule_task():
                               minute=cron_parts[0], hour=cron_parts[1], day=cron_parts[2], 
                               month=cron_parts[3], day_of_week=cron_parts[4], 
                               id='delete_synced_job')
-            print(f"[INFO] 🧹 总清理任务已启用，计划: {cron_str}")
+            log.info(f"🧹 总清理任务已启用，计划: {cron_str}")
         except Exception as e:
-            print(f"[ERROR] ❌ 无法设置清理任务，请检查 Cron 表达式 '{cron_str}': {e}")
+            log.error(f"无法设置清理任务，请检查 Cron 表达式 '{cron_str}': {e}")
     
     if APP_CONFIG.get("daily_summary_enabled"):
         cron_str = APP_CONFIG.get('summary_task_cron', '55 23 * * *')
@@ -253,6 +270,6 @@ def schedule_task():
                               minute=cron_parts[0], hour=cron_parts[1], day=cron_parts[2], 
                               month=cron_parts[3], day_of_week=cron_parts[4], 
                               id='daily_summary_job')
-            print(f"[INFO] 📊 每日摘要任务已启用，计划: {cron_str}")
+            log.info(f"📊 每日摘要任务已启用，计划: {cron_str}")
         except Exception as e:
-            print(f"[ERROR] ❌ 无法设置每日摘要任务，请检查 Cron 表达式 '{cron_str}': {e}")
+            log.error(f"无法设置每日摘要任务，请检查 Cron 表达式 '{cron_str}': {e}")

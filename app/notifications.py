@@ -1,9 +1,12 @@
 # app/notifications.py
 import re
+import logging
 from datetime import datetime
 import pytz
 from typing import Dict, Any
 from app import http_client, APP_CONFIG
+
+log = logging.getLogger(__name__)
 
 async def send_feishu_card_notification(title: str, text_content: str, color: str = "blue"):
     """发送一个通用的飞书卡片通知。"""
@@ -22,13 +25,13 @@ async def send_feishu_card_notification(title: str, text_content: str, color: st
     try:
         await http_client.post(feishu_url, json=payload, timeout=10)
     except Exception as e:
-        print(f"[FEISHU] 发送通用通知失败: {e}")
+        log.error(f"发送通用飞书通知失败", exc_info=True)
 
 async def send_feishu_notification_from_emby(payload: Dict[str, Any]):
     """处理 Emby webhook payload 并发送飞书通知。"""
     feishu_url = APP_CONFIG.get("feishu_webhook_url")
     if not feishu_url:
-        print("[EMBY WEBHOOK] 未配置飞书 Webhook URL，跳过通知。")
+        log.warning("未配置飞书 Webhook URL，跳过 Emby 通知。")
         return
 
     event_type = payload.get("Event", "unknown_event")
@@ -61,6 +64,7 @@ async def send_feishu_notification_from_emby(payload: Dict[str, Any]):
             episode_num = item_data.get("IndexNumber", 0)
             plain_text_title = f"{series_name} S{season_num:02d}E{episode_num:02d}"
         
+        log.info(f"收到 Emby 新入库通知: {plain_text_title}")
         card_title = f"{plain_text_title} 已入库"
         
         if update_time_text:
@@ -85,4 +89,4 @@ async def send_feishu_notification_from_emby(payload: Dict[str, Any]):
     try:
         await http_client.post(feishu_url, json=feishu_payload, timeout=10)
     except Exception as e:
-        print(f"[EMBY WEBHOOK] 发送飞书通知失败: {e}")
+        log.error(f"发送 Emby Webhook 飞书通知失败", exc_info=True)

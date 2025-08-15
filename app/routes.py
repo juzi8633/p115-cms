@@ -4,6 +4,7 @@ import time
 import traceback
 import asyncio
 import httpx
+import logging
 from quart import request, jsonify, render_template, current_app
 from p115client.tool.util import share_extract_payload
 from cachetools import TTLCache
@@ -14,6 +15,8 @@ from app.config import save_config
 from app.tasks import check_share_status_task, master_cleanup_task, schedule_task, _sync_to_cms
 from app.notifications import send_feishu_notification_from_emby
 from app.database import get_session, Shares
+
+log = logging.getLogger(__name__)
 
 # --- 缓存实例 ---
 browse_cache = TTLCache(maxsize=512, ttl=120)
@@ -31,13 +34,14 @@ async def api_config():
         data = await request.get_json()
         APP_CONFIG.update(data)
         save_config(APP_CONFIG)
-        schedule_task() 
+        schedule_task()
+        log.info("配置已保存，定时任务已刷新。")
         return jsonify({"success": True, "message": "设置已保存并计划任务已更新。"})
 
 @app.route('/api/logs')
 async def api_logs():
     try:
-        with open('app.log', 'r', encoding='utf-8') as f:
+        with open(APP_CONFIG.get("log_file", "data/app.log"), 'r', encoding='utf-8') as f:
             lines = f.readlines()
             last_lines = lines[-300:]
             return jsonify({"logs": "".join(last_lines)})
@@ -47,12 +51,15 @@ async def api_logs():
 @app.route('/api/logs/clear', methods=['POST'])
 async def api_clear_app_log():
     try:
-        with open('app.log', 'w', encoding='utf-8') as f:
+        log_file_path = APP_CONFIG.get("log_file", "data/app.log")
+        with open(log_file_path, 'w', encoding='utf-8') as f:
             f.truncate(0)
+        log.warning("管理员手动清空了运行时日志。")
         return jsonify({"success": True, "message": "运行时日志已清空。"})
     except FileNotFoundError:
         return jsonify({"success": True, "message": "日志文件不存在，无需操作。"})
     except Exception as e:
+        log.error("清空日志文件失败", exc_info=True)
         return jsonify({"error": f"清空日志失败: {e}"}), 500
 
 @app.route('/api/share-log/clear', methods=['POST'])
@@ -62,21 +69,22 @@ async def api_clear_share_log():
             async with get_session() as session:
                 delete_stmt = delete(Shares)
                 await session.execute(delete_stmt)
-            print("[WARN] 数据库 shares 表已被清空。")
+            log.warning("【高危】管理员手动清空了所有分享记录。")
             return jsonify({"success": True, "message": "所有分享记录已清空。"})
         except Exception as e:
+            log.error("清空分享记录失败", exc_info=True)
             return jsonify({"error": f"清空分享记录失败: {e}"}), 500
 
 @app.route('/api/cms-login', methods=['POST'])
 async def api_cms_login():
-    data = await request.get_json() # <--- 必须 await
+    data = await request.get_json()
     domain, username, password = data.get('cms_domain'), data.get('cms_username'), data.get('cms_password')
     
     if not all([domain, username, password]):
         return jsonify({"error": "CMS信息不完整"}), 400
     
     try:
-        r = await http_client.post(f"{domain.rstrip('/')}/api/auth/login", json={"username": username, "password": password}, timeout=10) # <--- 必须 await
+        r = await http_client.post(f"{domain.rstrip('/')}/api/auth/login", json={"username": username, "password": password}, timeout=10)
         r.raise_for_status()
         cms_data = r.json()
         
@@ -88,9 +96,10 @@ async def api_cms_login():
             return jsonify({"error": f"CMS 登录失败: {cms_data.get('msg', '未知错误')}"}), 400
             
     except httpx.RequestError as e:
+        log.error(f"连接 CMS 失败: {e}")
         return jsonify({"error": f"连接 CMS 失败: {e}"}), 500
     except Exception as e:
-        # 捕获其他可能的异常，例如 r.json() 失败
+        log.error("处理CMS响应时出错", exc_info=True)
         return jsonify({"error": f"处理CMS响应时出错: {e}"}), 500
 
 @app.route('/api/cms-sync-manual', methods=['POST'])
@@ -119,6 +128,7 @@ async def api_cms_sync_manual():
                 else:
                     return jsonify({"error": f"入库失败: {message}"}), 500
         except Exception as e:
+            log.error(f"手动同步数据库操作失败", exc_info=True)
             return jsonify({"error": f"数据库操作失败: {e}"}), 500
 
 @app.route('/api/browse')
@@ -126,7 +136,7 @@ async def api_browse():
     cid = request.args.get('cid', APP_CONFIG.get('root_cid'))
     
     if cid in browse_cache:
-        print(f"[CACHE] 命中缓存: CID {cid}")
+        log.debug(f"缓存命中: CID {cid}")
         return jsonify(browse_cache[cid])
 
     if not p115_client: 
@@ -149,7 +159,7 @@ async def api_browse():
         browse_cache[cid] = response_data
         return jsonify(response_data)
     except Exception as e:
-        traceback.print_exc()
+        log.error(f"浏览 CID {cid} 时发生意外错误", exc_info=True)
         return jsonify({"error": f"服务器内部发生意外错误。"}), 500
 
 @app.route('/api/my-shares')
@@ -202,6 +212,7 @@ async def api_create_share():
     async with get_session() as session:
         session.add(new_share)
 
+    log.info(f"成功创建分享: {new_share.share_title}")
     return jsonify({"new_url": new_share.share_url, "password": new_share.receive_code})
 
 @app.route('/api/delete-share', methods=['POST'])
@@ -217,17 +228,21 @@ async def api_delete_share():
 @app.route('/api/manual-audit', methods=['POST'])
 async def api_manual_audit():
     try:
+        log.info("手动触发审核任务。")
         await check_share_status_task()
         return jsonify({"success": True, "message": "审核任务执行完成。"})
     except Exception as e:
+        log.error("手动审核任务执行失败", exc_info=True)
         return jsonify({"error": f"内部错误: {e}"}), 500
 
 @app.route('/api/manual-clean', methods=['POST'])
 async def api_manual_clean():
     try:
+        log.info("手动触发清理任务。")
         await master_cleanup_task()
         return jsonify({"success": True, "message": "清理任务执行完成。"})
     except Exception as e:
+        log.error("手动清理任务执行失败", exc_info=True)
         return jsonify({"error": f"内部错误: {e}"}), 500
 
 @app.route('/api/transfer-share', methods=['POST'])
@@ -241,6 +256,7 @@ async def api_transfer_share():
     if not original_link or not category_name:
         return jsonify({"error": "分享链接和类型不能为空"}), 400
 
+    log.info(f"开始转存分享: {original_link}")
     target_cid = APP_CONFIG.get('target_cid', '0')
     transferred_file_ids = []
     try:
@@ -285,20 +301,21 @@ async def api_transfer_share():
         async with get_session() as session:
             session.add(new_share)
         
+        log.info(f"转存成功，新分享为: {new_share.share_title}")
         result_data = {c.name: getattr(new_share, c.name) for c in new_share.__table__.columns if c.name not in ['_sa_instance_state']}
         return jsonify({"success": True, "data": result_data})
         
     except Exception as e:
-        traceback.print_exc()
+        log.error(f"转存分享链接 '{original_link}' 失败", exc_info=True)
         return jsonify({"error": str(e)}), 500
     finally:
         if transferred_file_ids:
             try:
                 await asyncio.sleep(5) 
                 await asyncio.to_thread(p115_client.fs_delete, ",".join(transferred_file_ids))
-                print(f"[INFO] 临时目录 {transferred_file_ids} 清理完毕。")
+                log.info(f"临时文件 {transferred_file_ids} 清理完毕。")
             except Exception as e:
-                print(f"[ERROR] 清理临时目录 {transferred_file_ids} 失败: {e}")
+                log.error(f"清理临时文件 {transferred_file_ids} 失败: {e}")
 
 @app.route('/emby-webhook', methods=['POST'])
 async def handle_emby_webhook():

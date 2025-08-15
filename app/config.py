@@ -30,7 +30,12 @@ DEFAULT_CONFIG = {
     "emby_domain": "",
     "emby_api_key": "",
     "feishu_webhook_url": "",
-    "emby_webhook_token": ""
+    "emby_webhook_token": "",
+    # --- 新增日志配置 ---
+    "log_level": "INFO",
+    "log_file": "data/app.log",
+    "log_max_bytes": 10485760,
+    "log_backup_count": 5
 }
 
 def load_config(config_dict):
