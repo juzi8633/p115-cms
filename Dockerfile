@@ -6,7 +6,13 @@ FROM python:3.11-slim
 # 2. 设置容器内的工作目录
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y gcc build-essential
+# 更新 apt 包列表，并安装编译工具链和 aiosqlite 所需的开发库
+# 在一行中执行 update, install 和 clean，可以减小镜像层的大小
+RUN apt-get update && apt-get install -y \
+    gcc \
+    build-essential \
+    libsqlite3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # 3. 复制依赖文件到工作目录
 # (将这步和下一步分开，可以利用Docker的层缓存机制，在依赖不变时加快构建速度)
@@ -22,4 +28,4 @@ COPY . .
 EXPOSE 5000
 
 # 7. 定义启动容器时执行的命令
-CMD ["python", "run.py"]
+CMD ["waitress-serve", "--host=0.0.0.0", "--port=5000", "app:app"]
