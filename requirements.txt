@@ -6,5 +6,5 @@ apscheduler
 p115client
 httpx
 pytz
-waitress
+hypercorn
 cachetools

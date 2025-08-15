@@ -25,5 +25,5 @@ COPY . .
 # 7. 声明容器将监听的端口
 EXPOSE 5000
 
-# 8. 定义启动容器时执行的命令 (建议使用 waitress)
-CMD ["waitress-serve", "--host=0.0.0.0", "--port=5000", "app:app"]
+# 8. 定义启动容器时执行的命令 (建议使用 hypercorn)
+CMD ["hypercorn", "--bind", "0.0.0.0:5000", "app:app"]
