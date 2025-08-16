@@ -180,8 +180,8 @@
                     <div class="table-responsive-wrapper">
                         <el-table ref="tableRef" :data="files" v-loading="pageState.isLoading" @selection-change="handleSelectionChange" style="width: 100%;">
                             <template #empty><el-empty description="这个文件夹是空的哦" /></template>
-                            <el-table-column type="selection" width="55"></el-table-column>
-                            <el-table-column label="文件名" sortable prop="name">
+                            <el-table-column type="selection" width="40" fixed="left" ></el-table-column>
+                            <el-table-column label="文件名" sortable prop="name" min-width="160">
                                 <template #default="scope">
                                     <el-icon><component :is="scope.row.is_dir ? 'Folder' : 'Document'" /></el-icon>
                                     <span :class="{ 'folder-link': scope.row.is_dir }" @click="scope.row.is_dir && browseDirectory(scope.row.id, scope.row.name)" style="margin-left: 10px; vertical-align: middle;">{{ scope.row.name }}</span>
@@ -202,10 +202,10 @@
                     <div class="table-responsive-wrapper">
                         <el-table :data="shares.list" v-loading="pageState.isSharesLoading" style="width: 100%;">
                            <template #empty><el-empty description="没有符合条件的分享" /></template>
-                           <el-table-column prop="file_name" label="分享内容" show-overflow-tooltip><template #default="scope"><el-link :href="`${scope.row.share_url}?password=${scope.row.receive_code}`" type="primary" target="_blank">{{ scope.row.file_name }}</el-link></template></el-table-column>
-                           <el-table-column prop="create_time" label="创建时间" width="180" sortable></el-table-column>
+                           <el-table-column prop="file_name" label="分享内容" min-width="300" show-overflow-tooltip><template #default="scope"><el-link :href="`${scope.row.share_url}?password=${scope.row.receive_code}`" type="primary" target="_blank">{{ scope.row.file_name }}</el-link></template></el-table-column>
+                           <el-table-column prop="create_time" label="创建时间" width="160" sortable></el-table-column>
                            <el-table-column label="状态" width="120" align="center"><template #default="scope"><el-tag :type="getStatusType(scope.row.status)" effect="light" round>{{ formatStatus(scope.row.status) }}</el-tag></template></el-table-column>
-                           <el-table-column label="操作" width="150" align="center"><template #default="scope"><el-button v-if="scope.row.status == 1" link type="primary" @click="manualSync(scope.row)" :loading="pageState.isSyncing[scope.row.share_url]">入库</el-button><el-button link type="danger" @click="deleteShare(scope.row)" :icon="Delete">删除</el-button></template></el-table-column>
+                           <el-table-column label="操作" width="150" align="center" ><template #default="scope"><el-button v-if="scope.row.status == 1" link type="primary" @click="manualSync(scope.row)" :loading="pageState.isSyncing[scope.row.share_url]">入库</el-button><el-button link type="danger" @click="deleteShare(scope.row)" :icon="Delete">删除</el-button></template></el-table-column>
                         </el-table>
                     </div>
                     <div class="pagination-block" v-if="shares.total > shares.pageSize"><el-pagination background layout="prev, pager, next" :total="shares.total" :page-size="shares.pageSize" v-model:current-page="shares.currentPage" @current-change="fetchShares"/></div>
@@ -220,7 +220,7 @@
                 </div>
                 <div v-if="currentView === 'settings'">
                      <div class="settings-card">
-                        <el-tabs :tab-position="isMobile ? 'top' : 'left'" style="min-height: 400px;">
+                        <el-tabs v-model="currentTab" :tab-position="isMobile ? 'top' : 'left'" style="min-height: 400px;" @tab-click="handleClick">
                             <el-tab-pane label="基础设置" name="basic">
                                 <el-form label-width="140px" style="max-width: 600px; margin-top:20px;">
                                     <div class="setting-group-card">
@@ -331,6 +331,7 @@
                 const isDarkMode = ref(false);
                 const tableRef = ref(null);
                 const currentView = ref('browser');
+                const currentTab = ref('basic');
                 const isMobile = ref(window.innerWidth <= 768);
                 const files = ref([]);
                 const currentPath = ref([]);
@@ -372,7 +373,7 @@
                 const formatStatus = (s) => (STATUS_MAP[s] || UNKNOWN_STATUS).text;
                 const getStatusType = (s) => (STATUS_MAP[s] || UNKNOWN_STATUS).type;
                 const toggleTheme = (isDark) => { if (isDark) { document.documentElement.classList.add('dark'); localStorage.setItem('theme', 'dark'); } else { document.documentElement.classList.remove('dark'); localStorage.setItem('theme', 'light'); } };
-                
+                const handleClick = (active) => { currentTab.value = active };
                 onMounted(async () => {
                     const savedTheme = localStorage.getItem('theme');
                     if (savedTheme === 'dark') { isDarkMode.value = true; document.documentElement.classList.add('dark'); }
@@ -392,7 +393,7 @@
                     if (oldView === 'logs' && logInterval) { clearInterval(logInterval); logInterval = null; }
                 });
 
-                return { Sunny, Moon, Files, Share, Setting, ArrowRight, Folder, Document, Promotion, Delete, Switch, Memo, WarningFilled, isDarkMode, tableRef, currentView, isMobile, files, currentPath, selectedFiles, pageState, shares, config, transferState, statusOptions, logs, logContainer, browseDirectory, handleSelectionChange, createShare, fetchShares, saveConfig, deleteShare, formatStatus, getStatusType, loginToCms, manualSync, manualAudit, manualClean, openTransferDialog, handleTransferShare, clearAppLog, clearShareLog, toggleTheme };
+                return { Sunny, Moon, Files, Share, Setting, ArrowRight, Folder, Document, Promotion, Delete, Switch, Memo, WarningFilled, isDarkMode, tableRef, currentView, currentTab, isMobile, files, currentPath, selectedFiles, pageState, shares, config, transferState, statusOptions, logs, logContainer, browseDirectory, handleSelectionChange, createShare, fetchShares, saveConfig, deleteShare, formatStatus, getStatusType, loginToCms, manualSync, manualAudit, manualClean, openTransferDialog, handleTransferShare, clearAppLog, clearShareLog, toggleTheme, handleClick };
             }
         });
         const { ElMessage } = ElementPlus;
