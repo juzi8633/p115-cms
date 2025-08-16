@@ -13,7 +13,7 @@ DEFAULT_CONFIG = {
     "target_cid": "0",
     "task_enabled": False,
     "task_cron": "*/10 * * * *",
-    "task_batch_size": 5,
+    "task_batch_size": 1,
     "task_api_sleep_seconds": 15,
     "delete_task_enabled": False,
     "delete_task_cron": "0 4 * * *",

@@ -236,7 +236,6 @@
                                         <h3 class="setting-group-title">审核与同步任务</h3>
                                         <el-form-item label="启用审核任务"><el-switch v-model="config.task_enabled"/></el-form-item>
                                         <el-form-item label="审核任务计划" v-if="config.task_enabled"><el-input v-model="config.task_cron" placeholder="分 时 日 月 周"><template #append><el-link href="https://crontab.guru/" target="_blank">Cron 帮助</el-link></template></el-input></el-form-item>
-                                        <el-form-item label="审核批处理数量" v-if="config.task_enabled"><el-input-number v-model="config.task_batch_size" :min="1" :max="20" controls-position="right" style="width:100%"/></el-form-item>
                                         <el-form-item label="审核API间隔(秒)" v-if="config.task_enabled"><el-input-number v-model="config.task_api_sleep_seconds" :min="5" controls-position="right" style="width:100%"/></el-form-item>
                                     </div>
                                     <div class="setting-group-card">
@@ -299,8 +298,19 @@
         </div>
         <el-dialog v-model="transferState.dialogVisible" title="转存并生成新分享" :width="isMobile ? '90%' : '500px'" :close-on-click-modal="!transferState.isLoading">
             <el-form :model="transferState.form" label-position="top" @submit.prevent>
-                <el-form-item label="分享链接"><el-input v-model="transferState.form.shareLink" placeholder="请输入115分享链接，可含提取码"></el-input></el-form-item>
-                <el-form-item label="类型"><el-input v-model="transferState.form.category" placeholder="分类名称"></el-input></el-form-item>
+                <el-form-item label="分享链接">
+                    <el-input v-model="transferState.form.shareLink" placeholder="请输入115分享链接，可含提取码"></el-input>
+                </el-form-item>
+                <el-form-item label="类型">
+                    <el-select v-model="transferState.form.category" placeholder="请选择分类" filterable style="width: 100%;">
+                        <el-option
+                            v-for="option in flatCategoryOptions"
+                            :key="option.value"
+                            :label="option.label"
+                            :value="option.value"
+                        />
+                    </el-select>
+                </el-form-item>
             </el-form>
             <template #footer>
                 <el-button @click="transferState.dialogVisible = false" :disabled="transferState.isLoading">取消</el-button>
@@ -352,6 +362,22 @@
                 const transferState = reactive({ dialogVisible: false, isLoading: false, form: { shareLink: '', category: '' } });
                 const statusOptions = computed(() => Object.entries(STATUS_MAP).map(([val, {text}]) => ({value: val, label: text})));
 
+                // [修改] 直接定义扁平化的分类选项数组，不再使用两步转换
+                const flatCategoryOptions = ref([
+                    { label: '动画电影', value: 'movie/动画电影' },
+                    { label: '华语电影', value: 'movie/华语电影' },
+                    { label: '外语电影', value: 'movie/外语电影' },
+                    { label: '儿童', value: 'tv/儿童' },
+                    { label: '国漫', value: 'tv/国漫' },
+                    { label: '日番', value: 'tv/日番' },
+                    { label: '纪录片', value: 'tv/纪录片' },
+                    { label: '综艺', value: 'tv/综艺' },
+                    { label: '国产剧', value: 'tv/国产剧' },
+                    { label: '欧美剧', value: 'tv/欧美剧' },
+                    { label: '日韩剧', value: 'tv/日韩剧' },
+                    { label: '其它', value: 'tv/其它' }
+                ]);
+
                 const fetchLogs = async () => { try { const r = await axios.get('/api/logs'); logs.value = r.data.logs; nextTick(() => { if(logContainer.value) { logContainer.value.scrollTop = logContainer.value.scrollHeight; } }); } catch (e) { console.error('获取日志失败', e); } };
                 const clearAppLog = async () => { try { await ElementPlus.ElMessageBox.confirm('确定要清空当前的运行时日志吗？', '确认', { type: 'warning' }); pageState.isClearingLog = true; await axios.post('/api/logs/clear'); ElMessage.success('运行时日志已清空！'); fetchLogs(); } catch (e) { if (e !== 'cancel') ElMessage.error('操作失败'); } finally { pageState.isClearingLog = false; } };
                 const clearShareLog = async () => { try { await ElementPlus.ElMessageBox.confirm('<strong>这是一个高危操作！</strong><br>将永久删除所有分享记录和任务状态，且无法恢复。<br>您确定要继续吗？', '严重警告', { type: 'error', dangerouslyUseHTMLString: true, confirmButtonText: '我确定，清空所有记录' }); pageState.isClearingShareLog = true; await axios.post('/api/share-log/clear'); ElMessage.success('所有分享记录已清空！'); if (currentView.value === 'shares') { fetchShares(1); } } catch (e) { if (e !== 'cancel') ElMessage.error('操作失败'); } finally { pageState.isClearingShareLog = false; } };
@@ -393,7 +419,7 @@
                     if (oldView === 'logs' && logInterval) { clearInterval(logInterval); logInterval = null; }
                 });
 
-                return { Sunny, Moon, Files, Share, Setting, ArrowRight, Folder, Document, Promotion, Delete, Switch, Memo, WarningFilled, isDarkMode, tableRef, currentView, currentTab, isMobile, files, currentPath, selectedFiles, pageState, shares, config, transferState, statusOptions, logs, logContainer, browseDirectory, handleSelectionChange, createShare, fetchShares, saveConfig, deleteShare, formatStatus, getStatusType, loginToCms, manualSync, manualAudit, manualClean, openTransferDialog, handleTransferShare, clearAppLog, clearShareLog, toggleTheme, handleClick };
+                return { Sunny, Moon, Files, Share, Setting, ArrowRight, Folder, Document, Promotion, Delete, Switch, Memo, WarningFilled, isDarkMode, tableRef, currentView, currentTab, isMobile, files, currentPath, selectedFiles, pageState, shares, config, transferState, statusOptions, logs, logContainer, flatCategoryOptions, browseDirectory, handleSelectionChange, createShare, fetchShares, saveConfig, deleteShare, formatStatus, getStatusType, loginToCms, manualSync, manualAudit, manualClean, openTransferDialog, handleTransferShare, clearAppLog, clearShareLog, toggleTheme, handleClick };
             }
         });
         const { ElMessage } = ElementPlus;

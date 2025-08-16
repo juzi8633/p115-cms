@@ -57,13 +57,18 @@ async def send_feishu_notification_from_emby(payload: Dict[str, Any]):
                 update_time_text = local_time.strftime('%Y-%m-%d %H:%M:%S')
             except Exception: pass
 
-        plain_text_title = item_data.get("Name", "未知项目")
         if item_type == "Episode":
             series_name = item_data.get("SeriesName", "未知剧集")
             season_num = item_data.get("ParentIndexNumber", 0)
             episode_num = item_data.get("IndexNumber", 0)
-            plain_text_title = f"{series_name} S{season_num:02d}E{episode_num:02d}"
-        
+            episode_format = f"S{season_num:02d}E{episode_num:02d}"
+            plain_text_title = f"{series_name} {episode_format}"
+        elif item_type == "Series":
+            series_name = item_data.get("Name", "未知项目")
+            description = payload.get("Description", "")
+            episode_range = description.split('\n')[0].strip() if description else ""
+            plain_text_title = f"{series_name} {episode_range}"
+
         log.info(f"收到 Emby 新入库通知: {plain_text_title}")
         card_title = f"{plain_text_title} 已入库"
         

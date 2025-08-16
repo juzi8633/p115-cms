@@ -1,6 +1,7 @@
 # app/tasks.py
 import time
 import json
+import os
 import traceback
 import asyncio
 import logging
@@ -25,8 +26,9 @@ async def _sync_to_cms(entry):
         headers = {'Authorization': f'Bearer {cms_token}', 'Content-Type': 'application/json'}
         path_hierarchy_json = entry.get("path_hierarchy", "[]")
         path_hierarchy = json.loads(path_hierarchy_json)
-        last_folder_name = path_hierarchy[-1].get("name", "") if path_hierarchy else ""
-        local_path = f"{APP_CONFIG.get('cms_sync_path', '/media/share/')}{last_folder_name}"
+        folder_names = [item.get("name") for item in path_hierarchy if item.get("name")]
+        base_path = APP_CONFIG.get('cms_sync_path', '/media/share/')
+        local_path = os.path.join(base_path, *folder_names)
         payload = {"share_code": entry.get("share_code"), "receive_code": entry.get("receive_code"), "cid": 0, "local_path": local_path}
         sync_response = await http_client.post(sync_url, json=payload, headers=headers)
         sync_response.raise_for_status()

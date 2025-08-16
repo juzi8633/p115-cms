@@ -181,7 +181,7 @@ async def api_my_shares():
         query = query.order_by(Shares.timestamp.desc()).limit(limit).offset(offset)
         result = await session.execute(query)
         paginated_entries = result.scalars().all()
-
+        
     shares_to_return = [{"share_url": i.share_url, "receive_code": i.receive_code, "file_name": i.share_title, "create_time": i.timestamp, "status": i.status} for i in paginated_entries]
     return jsonify({"shares": shares_to_return, "total": total})
 
