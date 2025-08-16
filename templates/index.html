@@ -364,18 +364,18 @@
 
                 // [修改] 直接定义扁平化的分类选项数组，不再使用两步转换
                 const flatCategoryOptions = ref([
-                    { label: '动画电影', value: 'movie/动画电影' },
-                    { label: '华语电影', value: 'movie/华语电影' },
-                    { label: '外语电影', value: 'movie/外语电影' },
-                    { label: '儿童', value: 'tv/儿童' },
-                    { label: '国漫', value: 'tv/国漫' },
-                    { label: '日番', value: 'tv/日番' },
-                    { label: '纪录片', value: 'tv/纪录片' },
-                    { label: '综艺', value: 'tv/综艺' },
-                    { label: '国产剧', value: 'tv/国产剧' },
-                    { label: '欧美剧', value: 'tv/欧美剧' },
-                    { label: '日韩剧', value: 'tv/日韩剧' },
-                    { label: '其它', value: 'tv/其它' }
+                    { label: '动画电影', value: 'Movie/动画电影' },
+                    { label: '华语电影', value: 'Movie/华语电影' },
+                    { label: '外语电影', value: 'Movie/外语电影' },
+                    { label: '儿童', value: 'TV/儿童' },
+                    { label: '国漫', value: 'TV/国漫' },
+                    { label: '日番', value: 'TV/日番' },
+                    { label: '纪录片', value: 'TV/纪录片' },
+                    { label: '综艺', value: 'TV/综艺' },
+                    { label: '国产剧', value: 'TV/国产剧' },
+                    { label: '欧美剧', value: 'TV/欧美剧' },
+                    { label: '日韩剧', value: 'TV/日韩剧' },
+                    { label: '其它', value: 'TV/其它' }
                 ]);
 
                 const fetchLogs = async () => { try { const r = await axios.get('/api/logs'); logs.value = r.data.logs; nextTick(() => { if(logContainer.value) { logContainer.value.scrollTop = logContainer.value.scrollHeight; } }); } catch (e) { console.error('获取日志失败', e); } };
