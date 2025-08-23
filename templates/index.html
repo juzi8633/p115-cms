@@ -419,8 +419,13 @@
                         </el-table>
                     </div>
                     <div class="pagination-block" v-if="files.total > files.pageSize">
-                        <el-pagination background layout="prev, pager, next" :total="files.total"
-                            :page-size="files.pageSize" v-model:current-page="files.currentPage"
+                        <el-pagination background
+                            layout="total, sizes, prev, pager, next" 
+                            :page-sizes="[50, 100, 200]"
+                            :total="files.total" 
+                            v-model:page-size="files.pageSize"
+                            v-model:current-page="files.currentPage" 
+                            @size-change="handleFileSizeChange"
                             @current-change="handleFilePageChange" />
                     </div>
                 </div>
@@ -468,9 +473,16 @@
                             </el-table-column>
                         </el-table>
                     </div>
-                    <div class="pagination-block" v-if="shares.total > shares.pageSize"><el-pagination background
-                            layout="prev, pager, next" :total="shares.total" :page-size="shares.pageSize"
-                            v-model:current-page="shares.currentPage" @current-change="fetchShares" /></div>
+                    <div class="pagination-block" v-if="shares.total > shares.pageSize">
+                        <el-pagination background
+                            layout="total, sizes, prev, pager, next" 
+                            :page-sizes="[20, 50, 100, 200]"
+                            :total="shares.total" 
+                            v-model:page-size="shares.pageSize"
+                            v-model:current-page="shares.currentPage" 
+                            @size-change="handleShareSizeChange"
+                            @current-change="fetchShares" />
+                    </div>
                 </div>
                 <div v-if="currentView === 'logs'">
                     <div style="display: flex; justify-content: flex-end; margin-bottom: 16px;">
@@ -713,7 +725,6 @@
                 const fetchLogs = async () => {
                     try {
                         const r = await axios.get('/api/logs');
-                        // 将获取到的日志字符串按行分割，反转数组，然后再合并成字符串
                         if (r.data.logs) {
                             logs.value = r.data.logs.split('\n').reverse().join('\n');
                         } else {
@@ -721,7 +732,6 @@
                         }
                         nextTick(() => {
                             if (logContainer.value) {
-                                // 滚动到顶部以查看最新的日志
                                 logContainer.value.scrollTop = 0;
                             }
                         });
@@ -737,7 +747,7 @@
                 const loginToCms = async () => { pageState.isLoggingIn = true; try { const r = await axios.post('/api/cms-login', { cms_domain: config.cms_domain, cms_username: config.cms_username, cms_password: config.cms_password }); config.cms_token = r.data.cms_token; ElMessage.success(r.data.message); } catch (e) { config.cms_token = ''; ElMessage.error(e.response?.data?.error || '登录失败'); } finally { pageState.isLoggingIn = false; } };
                 const manualAudit = async () => { pageState.isAuditing = true; try { const r = await axios.post('/api/manual-audit'); ElMessage.success(r.data.message || '审核任务执行完毕！'); } catch (e) { ElMessage.error(e.response?.data?.error || '执行审核任务失败'); } finally { pageState.isAuditing = false; } };
                 const manualClean = async () => { try { await ElementPlus.ElMessageBox.confirm('确定要手动清理吗？这将删除115上所有“已入库”分享的源文件。', '警告', { type: 'warning' }); pageState.isCleaning = true; const r = await axios.post('/api/manual-clean'); ElMessage.success(r.data.message || '清理任务执行完毕！'); } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.error || '执行清理任务失败'); } finally { pageState.isCleaning = false; } };
-
+                
                 const browseDirectory = async (cid, dirName) => {
                     if (!cid || cid === '0') {
                         ElMessage.warning('请先在设置中配置根目录 CID');
@@ -754,7 +764,7 @@
                             currentPath.value.push({ cid, name: dirName });
                         }
                     }
-                    files.currentPage = 1;
+                    files.currentPage = 1; 
                     await fetchFiles(cid);
                 };
 
@@ -771,9 +781,16 @@
                         pageState.isLoading = false;
                     }
                 };
-
+                
                 const handleFilePageChange = (newPage) => {
                     files.currentPage = newPage;
+                    const currentCid = currentPath.value.length > 0 ? currentPath.value[currentPath.value.length - 1].cid : config.root_cid;
+                    fetchFiles(currentCid);
+                };
+                
+                const handleFileSizeChange = (newPageSize) => {
+                    files.pageSize = newPageSize;
+                    files.currentPage = 1; // 重置到第一页
                     const currentCid = currentPath.value.length > 0 ? currentPath.value[currentPath.value.length - 1].cid : config.root_cid;
                     fetchFiles(currentCid);
                 };
@@ -809,7 +826,28 @@
                         pageState.isSharing = false;
                     }
                 };
-                const fetchShares = async (page = 1) => { pageState.isSharesLoading = true; shares.currentPage = page; const offset = (page - 1) * shares.pageSize; try { const params = { offset, limit: shares.pageSize, status_filter: shares.statusFilter }; const r = await axios.get('/api/my-shares', { params }); shares.list = r.data.shares; shares.total = r.data.total; } catch (e) { ElMessage.error('获取分享列表失败'); } finally { pageState.isSharesLoading = false; } };
+                const fetchShares = async (page = 1) => { 
+                    pageState.isSharesLoading = true; 
+                    shares.currentPage = page; 
+                    const offset = (page - 1) * shares.pageSize; 
+                    try { 
+                        const params = { offset, limit: shares.pageSize, status_filter: shares.statusFilter }; 
+                        const r = await axios.get('/api/my-shares', { params }); 
+                        shares.list = r.data.shares; 
+                        shares.total = r.data.total; 
+                    } catch (e) { 
+                        ElMessage.error('获取分享列表失败'); 
+                    } finally { 
+                        pageState.isSharesLoading = false; 
+                    } 
+                };
+                
+                // [新增] 我的分享视图的每页条数变更处理器
+                const handleShareSizeChange = (newPageSize) => {
+                    shares.pageSize = newPageSize;
+                    fetchShares(1); // El-pagination v-model 会自动更新 currentPage, 但我们最好重置到第一页
+                };
+
                 const deleteShare = async (share) => { try { await ElementPlus.ElMessageBox.confirm('确定要删除这条分享记录吗？', '警告', { type: 'warning' }); await axios.post('/api/delete-share', { share_url: share.share_url }); ElMessage.success('分享记录已删除'); fetchShares(shares.currentPage); } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.error || '删除失败'); } };
                 const openTransferDialog = () => { transferState.form.shareLink = ''; transferState.form.category = ''; transferState.dialogVisible = true; };
                 const handleTransferShare = async () => { if (!transferState.form.shareLink || !transferState.form.category) { ElMessage.warning('请填写所有字段'); return; } transferState.isLoading = true; try { const r = await axios.post('/api/transfer-share', transferState.form); ElMessage.success('转存并创建新分享成功！'); transferState.dialogVisible = false; fetchShares(1); } catch (e) { ElMessage.error(e.response?.data?.error || '转存失败'); } finally { transferState.isLoading = false; } };
@@ -824,7 +862,7 @@
                 const formatStatus = (s) => (STATUS_MAP[s] || UNKNOWN_STATUS).text;
                 const getStatusType = (s) => (STATUS_MAP[s] || UNKNOWN_STATUS).type;
                 const toggleTheme = (isDark) => { if (isDark) { document.documentElement.classList.add('dark'); localStorage.setItem('theme', 'dark'); } else { document.documentElement.classList.remove('dark'); localStorage.setItem('theme', 'light'); } };
-
+                
                 onMounted(async () => {
                     const savedTheme = localStorage.getItem('theme');
                     if (savedTheme === 'dark') { isDarkMode.value = true; document.documentElement.classList.add('dark'); }
