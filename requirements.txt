@@ -1,0 +1,10 @@
+# requirements.txt
+quart
+sqlalchemy
+aiosqlite
+apscheduler
+p115client
+httpx
+pytz
+hypercorn
+cachetools

@@ -1,0 +1,53 @@
+# 工作流名称
+name: Docker Image CI
+
+# 工作流触发器
+on:
+  # 1. 当有代码推送到 main 分支时自动触发
+  push:
+    branches: [ "main" ]
+    
+  # 2. 允许在 GitHub Actions 页面手动触发 (无须任何输入)
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    # 运行环境
+    runs-on: ubuntu-latest
+    # 需要的权限
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # 第一步：检出仓库代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 第二步：智能提取 Docker 镜像的元数据 (如标签)
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            # 当触发的目标是默认分支时，添加 'latest' 标签
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # 第三步：登录到 GitHub Container Registry (ghcr.io)
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 第四步：构建并推送 Docker 镜像
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          # 使用上一步 (meta) 生成的标签和标注
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

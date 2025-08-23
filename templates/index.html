@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>115 智能管理器</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus@2.7.2/dist/index.css" />
+    <style>
+        /* --- 1. 全局与布局 --- */
+        :root {
+            --app-bg-color: #f4f7fa;
+            --content-bg-color: #ffffff;
+            --header-bg-color: #ffffff;
+            --border-color: #e4e7ed;
+            --text-color-primary: #303133;
+            --text-color-regular: #606266;
+            --text-color-secondary: #909399;
+            --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+            --el-color-primary: #409eff;
+            --el-color-primary-light-9: #ecf5ff;
+        }
+
+        html.dark {
+            --app-bg-color: #101418;
+            --content-bg-color: #1d232a;
+            --header-bg-color: #1d232a;
+            --border-color: #303740;
+            --text-color-primary: #e5e7eb;
+            --text-color-regular: #9ca3af;
+            --text-color-secondary: #6b7280;
+            --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            --el-color-primary-light-9: #282e36;
+        }
+
+        body {
+            background-color: var(--app-bg-color);
+            background-image: radial-gradient(circle at 1% 1%, rgba(120, 120, 120, 0.08), rgba(255, 255, 255, 0) 25%);
+            margin: 0;
+            font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+            transition: background-color 0.3s ease;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            color: var(--text-color-regular);
+        }
+
+        #app {
+            padding: 24px;
+            max-width: 1400px;
+            margin: 0 auto;
+            transition: padding 0.3s ease;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(128, 128, 128, 0.3);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(128, 128, 128, 0.5);
+        }
+
+        html.dark ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        html.dark ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        /* --- 2. 卡片与通用组件 --- */
+        .app-header,
+        .main-content-card {
+            background: var(--header-bg-color);
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--card-shadow);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        .app-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+        }
+
+        .app-header .title-area h1 {
+            margin: 0;
+            font-size: 26px;
+            color: var(--text-color-primary);
+            font-weight: 600;
+        }
+
+        .app-header .title-area p {
+            margin: 4px 0 0;
+            color: var(--text-color-regular);
+            font-size: 14px;
+        }
+
+        .main-content-card {
+            padding: 24px;
+            min-height: 65vh;
+        }
+
+        /* --- 3. 特定组件美化与暗黑模式修复 --- */
+        .view-switcher {
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        .folder-link {
+            color: var(--el-color-primary);
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .el-table {
+            background-color: transparent !important;
+            --el-table-row-hover-bg-color: var(--el-color-primary-light-9);
+        }
+
+        .table-responsive-wrapper {
+            overflow-x: auto;
+        }
+
+        .pagination-block {
+            margin-top: 24px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .fab-share-button {
+            position: fixed;
+            right: 40px;
+            bottom: 40px;
+            z-index: 10;
+            animation: fab-enter 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        @keyframes fab-enter {
+            from {
+                transform: scale(0.5);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .el-button {
+            transition: all 0.2s ease-in-out;
+        }
+
+        .el-button:active {
+            transform: scale(0.95);
+        }
+
+        .el-input__wrapper.is-focus {
+            box-shadow: 0 0 0 1px var(--el-color-primary) inset, 0 0 0 3px var(--el-color-primary-light-9);
+        }
+
+        .el-input .el-input__wrapper {
+            transition: box-shadow 0.2s ease;
+        }
+
+        .shares-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .operations-cell .el-button+.el-button {
+            margin-left: 8px;
+        }
+
+        .setting-group-card {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+
+        .setting-group-card .setting-group-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-color-primary);
+            margin: -24px -24px 20px -24px;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        html.dark .el-dialog,
+        html.dark .el-message-box,
+        html.dark .el-drawer,
+        html.dark .el-message,
+        html.dark .el-notification {
+            --el-bg-color: var(--content-bg-color) !important;
+            --el-text-color-primary: var(--text-color-primary) !important;
+            --el-text-color-regular: var(--text-color-regular) !important;
+            --el-border-color-lighter: var(--border-color) !important;
+        }
+
+        html.dark .el-dialog__headerbtn .el-icon,
+        html.dark .el-drawer__close-btn .el-icon,
+        html.dark .el-message__closeBtn,
+        html.dark .el-notification__closeBtn {
+            color: var(--text-color-primary) !important;
+        }
+
+        html.dark .el-pagination {
+            --el-pagination-bg-color: transparent !important;
+            --el-pagination-text-color: var(--text-color-regular) !important;
+            --el-pagination-button-disabled-bg-color: #2c343c !important;
+        }
+
+        html.dark .el-empty__description p {
+            color: var(--text-color-secondary) !important;
+        }
+
+        html.dark .el-breadcrumb__inner,
+        html.dark .el-breadcrumb__separator {
+            color: var(--text-color-regular) !important;
+        }
+
+        html.dark .el-table__header-wrapper th,
+        html.dark .el-table th.el-table__cell {
+            --el-table-header-bg-color: #2c343c !important;
+            --el-table-header-text-color: var(--text-color-regular) !important;
+        }
+
+        html.dark .el-tabs__item,
+        html.dark .el-tabs__nav {
+            color: var(--text-color-regular) !important;
+        }
+
+        html.dark .el-tabs__item.is-active {
+            color: var(--el-color-primary) !important;
+        }
+
+        html.dark .el-tabs__nav-wrap::after {
+            background-color: var(--border-color) !important;
+        }
+
+        html.dark .el-radio-button__inner {
+            background-color: transparent !important;
+            color: var(--text-color-regular) !important;
+            border-color: var(--border-color) !important;
+            box-shadow: none !important;
+        }
+
+        html.dark .el-radio-button__original-radio:checked+.el-radio-button__inner {
+            background-color: var(--el-color-primary) !important;
+            color: #fff !important;
+        }
+
+        html.dark .el-loading-mask {
+            background-color: rgba(29, 35, 42, 0.8) !important;
+        }
+
+        /* --- 4. 响应式布局优化 --- */
+        @media (max-width: 768px) {
+            #app {
+                padding: 12px;
+            }
+
+            .main-content-card {
+                padding: 16px;
+            }
+
+            .app-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+            }
+
+            .app-header h1 {
+                font-size: 22px !important;
+            }
+
+            .fab-share-button {
+                right: 16px;
+                bottom: 16px;
+            }
+
+            .shares-toolbar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .shares-toolbar .el-radio-group {
+                justify-content: center;
+            }
+
+            .view-switcher .el-radio-group {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+
+            .settings-card .el-form-item {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .settings-card .el-form-item__label {
+                text-align: left;
+                line-height: 1.5;
+                margin-bottom: 8px;
+            }
+
+            .settings-card .el-form-item__content {
+                width: 100%;
+                margin-left: 0 !important;
+            }
+
+            .settings-card .el-form-item--large {
+                margin-bottom: 18px;
+            }
+
+            .el-dialog.is-fullscreen {
+                border-radius: 0 !important;
+            }
+
+            .el-dialog {
+                --el-dialog-width: 90% !important;
+                --el-dialog-margin-top: 10vh !important;
+            }
+
+            .el-table .el-table__cell:last-child .cell {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .el-table .el-table__cell:last-child .cell .el-button {
+                margin-left: 0 !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    {% raw %}
+    <div id="app">
+        <header class="app-header">
+            <div class="title-area">
+                <h1>115 智能管理器</h1>
+                <p>文件浏览、分享与自动化</p>
+            </div>
+            <el-switch v-model="isDarkMode" @change="toggleTheme" inline-prompt :active-icon="Moon"
+                :inactive-icon="Sunny" style="--el-switch-on-color: #2c2c2c; --el-switch-off-color: #f2f2f2;" />
+        </header>
+        <main>
+            <div class="view-switcher">
+                <el-radio-group v-model="currentView">
+                    <el-radio-button label="browser"><el-icon>
+                            <Files />
+                        </el-icon>&nbsp;文件浏览</el-radio-button>
+                    <el-radio-button label="shares"><el-icon>
+                            <Share />
+                        </el-icon>&nbsp;我的分享</el-radio-button>
+                    <el-radio-button label="logs"><el-icon>
+                            <Memo />
+                        </el-icon>&nbsp;日志</el-radio-button>
+                    <el-radio-button label="settings"><el-icon>
+                            <Setting />
+                        </el-icon>&nbsp;设置</el-radio-button>
+                </el-radio-group>
+            </div>
+            <div class="main-content-card">
+                <div v-if="currentView === 'browser'">
+                    <el-breadcrumb separator-icon="ArrowRight" style="margin-bottom: 24px;">
+                        <el-breadcrumb-item><a
+                                @click="browseDirectory(config.root_cid, '根目录')">根目录</a></el-breadcrumb-item>
+                        <el-breadcrumb-item v-for="part in currentPath" :key="part.cid"><a
+                                @click="browseDirectory(part.cid, part.name)">{{ part.name }}</a></el-breadcrumb-item>
+                    </el-breadcrumb>
+                    <div class="table-responsive-wrapper">
+                        <el-table ref="tableRef" :data="files.list" v-loading="pageState.isLoading"
+                            @selection-change="handleSelectionChange" style="width: 100%;">
+                            <template #empty><el-empty description="这个文件夹是空的哦" /></template>
+                            <el-table-column type="selection" width="40" fixed="left"></el-table-column>
+                            <el-table-column label="文件名" sortable prop="name" min-width="160">
+                                <template #default="scope">
+                                    <el-icon>
+                                        <component :is="scope.row.is_dir ? 'Folder' : 'Document'" />
+                                    </el-icon>
+                                    <span :class="{ 'folder-link': scope.row.is_dir }"
+                                        @click="scope.row.is_dir && browseDirectory(scope.row.id, scope.row.name)"
+                                        style="margin-left: 10px; vertical-align: middle;">
+                                        {{ scope.row.name }}
+                                    </span>
+                                    <el-tooltip v-if="scope.row.is_shared" content="已分享" placement="top">
+                                        <el-icon style="margin-left: 8px; vertical-align: middle; color: #67C23A;">
+                                            <Share />
+                                        </el-icon>
+                                    </el-tooltip>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="time" label="修改日期" width="180" sortable />
+                        </el-table>
+                    </div>
+                    <div class="pagination-block" v-if="files.total > files.pageSize">
+                        <el-pagination background layout="prev, pager, next" :total="files.total"
+                            :page-size="files.pageSize" v-model:current-page="files.currentPage"
+                            @current-change="handleFilePageChange" />
+                    </div>
+                </div>
+                <div v-if="currentView === 'shares'">
+                    <div class="shares-toolbar">
+                        <el-radio-group v-model="shares.statusFilter" @change="fetchShares(1)">
+                            <el-radio-button label="">全部</el-radio-button>
+                            <el-radio-button :label="s.value" v-for="s in statusOptions" :key="s.value">{{ s.label
+                                }}</el-radio-button>
+                        </el-radio-group>
+                        <el-button type="primary" @click="openTransferDialog" :icon="Switch">转存分享</el-button>
+                    </div>
+                    <div class="table-responsive-wrapper">
+                        <el-table :data="shares.list" v-loading="pageState.isSharesLoading" style="width: 100%;">
+                            <template #empty><el-empty description="没有符合条件的分享" /></template>
+                            <el-table-column prop="file_name" label="分享内容" min-width="300"
+                                show-overflow-tooltip><template #default="scope"><el-link
+                                        :href="`${scope.row.share_url}?password=${scope.row.receive_code}`"
+                                        type="primary" target="_blank">{{ scope.row.file_name
+                                        }}</el-link></template></el-table-column>
+                            <el-table-column prop="create_time" label="创建时间" width="160" sortable></el-table-column>
+                            <el-table-column label="状态" width="120" align="center"><template #default="scope"><el-tag
+                                        :type="getStatusType(scope.row.status)" effect="light" round>{{
+                                        formatStatus(scope.row.status) }}</el-tag></template></el-table-column>
+                            <el-table-column label="操作" width="220" align="center">
+                                <template #default="scope">
+                                    <div class="operations-cell">
+                                        <el-button v-if="scope.row.status == 0" link type="primary"
+                                            @click="checkShare(scope.row)"
+                                            :loading="pageState.isChecking[scope.row.share_url]">检查状态</el-button>
+                                        <el-button v-if="scope.row.status == 1" link type="primary"
+                                            @click="manualSync(scope.row)"
+                                            :loading="pageState.isSyncing[scope.row.share_url]">入库</el-button>
+                                        <el-button v-if="[4, 6].includes(scope.row.status)" link type="danger"
+                                            @click="cleanShare(scope.row)"
+                                            :loading="pageState.isCleaningSingle[scope.row.share_url]">
+                                            {{ scope.row.status === 4 ? '清理文件' : '重新清理' }}
+                                        </el-button>
+                                        <el-button link type="primary"
+                                            @click="openStatusEditor(scope.row)">编辑</el-button>
+                                        <el-button link type="danger" @click="deleteShare(scope.row)"
+                                            :icon="Delete"></el-button>
+                                    </div>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                    </div>
+                    <div class="pagination-block" v-if="shares.total > shares.pageSize"><el-pagination background
+                            layout="prev, pager, next" :total="shares.total" :page-size="shares.pageSize"
+                            v-model:current-page="shares.currentPage" @current-change="fetchShares" /></div>
+                </div>
+                <div v-if="currentView === 'logs'">
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 16px;">
+                        <el-button type="warning" plain @click="clearAppLog" :loading="pageState.isClearingLog"
+                            :icon="Delete">清空当前日志</el-button>
+                    </div>
+                    <div
+                        style="background-color: var(--app-bg-color); color: var(--text-color-regular); padding: 15px; border-radius: 8px; font-family: 'Courier New', Courier, monospace; height: 62vh; overflow-y: auto; border: 1px solid var(--border-color);">
+                        <pre ref="logContainer"
+                            style="white-space: pre-wrap; word-wrap: break-word; margin: 0; font-size: 13px;">{{ logs }}</pre>
+                    </div>
+                </div>
+                <div v-if="currentView === 'settings'">
+                    <div class="settings-card">
+                        <el-tabs v-model="currentTab" :tab-position="isMobile ? 'top' : 'left'"
+                            style="min-height: 400px;">
+                            <el-tab-pane label="基础设置" name="basic">
+                                <el-form label-width="140px" style="max-width: 600px; margin-top:20px;">
+                                    <div class="setting-group-card">
+                                        <h3 class="setting-group-title">目录设置</h3>
+                                        <el-form-item label="根目录 CID"><el-input v-model="config.root_cid"
+                                                placeholder="文件浏览的起始目录CID" /></el-form-item>
+                                        <el-form-item label="转存临时目录"><el-input v-model="config.target_cid"
+                                                placeholder="用于接收转存分享的目录CID" /></el-form-item>
+                                    </div>
+                                </el-form>
+                            </el-tab-pane>
+                            <el-tab-pane label="定时任务" name="tasks">
+                                <el-form label-width="140px" style="max-width: 600px; margin-top:20px;">
+                                    <div class="setting-group-card">
+                                        <h3 class="setting-group-title">审核与同步任务</h3>
+                                        <el-form-item label="启用审核任务"><el-switch
+                                                v-model="config.task_enabled" /></el-form-item>
+                                        <el-form-item label="审核任务计划" v-if="config.task_enabled"><el-input
+                                                v-model="config.task_cron" placeholder="分 时 日 月 周"><template
+                                                    #append><el-link href="https://crontab.guru/" target="_blank">Cron
+                                                        帮助</el-link></template></el-input></el-form-item>
+                                        <el-form-item label="审核任务批处理数量" v-if="config.task_enabled"><el-input-number
+                                                v-model="config.task_batch_size" :min="1" controls-position="right"
+                                                style="width:100%" /></el-form-item>
+                                        <el-form-item label="审核API间隔(秒)" v-if="config.task_enabled"><el-input-number
+                                                v-model="config.task_api_sleep_seconds" :min="5"
+                                                controls-position="right" style="width:100%" /></el-form-item>
+                                    </div>
+                                    <div class="setting-group-card">
+                                        <h3 class="setting-group-title">文件清理任务</h3>
+                                        <el-form-item label="启用清理任务"><el-switch
+                                                v-model="config.delete_task_enabled" /></el-form-item>
+                                        <el-form-item label="清理任务计划" v-if="config.delete_task_enabled"><el-input
+                                                v-model="config.delete_task_cron" placeholder="分 时 日 月 周"><template
+                                                    #append><el-link href="https://crontab.guru/" target="_blank">Cron
+                                                        帮助</el-link></template></el-input></el-form-item>
+                                        <el-form-item label="清理批处理数量" v-if="config.delete_task_enabled"><el-input-number
+                                                v-model="config.delete_task_batch_size" :min="1" :max="50"
+                                                controls-position="right" style="width:100%" /></el-form-item>
+                                        <el-form-item label="文件间隔(秒)" v-if="config.delete_task_enabled"><el-input-number
+                                                v-model="config.delete_task_sleep_seconds" :min="10"
+                                                controls-position="right" style="width:100%" /></el-form-item>
+                                        <el-form-item label="批次间隔(分钟)"
+                                            v-if="config.delete_task_enabled"><el-input-number
+                                                v-model="config.delete_task_batch_interval_minutes" :min="1"
+                                                controls-position="right" style="width:100%" /></el-form-item>
+                                        <el-form-item label="单次最大删除数量"
+                                            v-if="config.delete_task_enabled"><el-input-number
+                                                v-model="config.delete_api_chunk_size" :min="115"
+                                                controls-position="right" style="width:100%" /></el-form-item>
+                                    </div>
+                                    <div class="setting-group-card">
+                                        <h3 class="setting-group-title">通知任务</h3>
+                                        <el-form-item label="启用每日摘要"><el-switch
+                                                v-model="config.daily_summary_enabled" /></el-form-item>
+                                        <el-form-item label="摘要任务计划" v-if="config.daily_summary_enabled"><el-input
+                                                v-model="config.summary_task_cron" placeholder="分 时 日 月 周"><template
+                                                    #append><el-link href="https://crontab.guru/" target="_blank">Cron
+                                                        帮助</el-link></template></el-input></el-form-item>
+                                    </div>
+                                    <div class="setting-group-card">
+                                        <h3 class="setting-group-title">手动操作</h3>
+                                        <el-form-item label="手动任务"><el-button @click="manualAudit"
+                                                :loading="pageState.isAuditing" type="primary"
+                                                plain>执行审核</el-button><el-button @click="manualClean"
+                                                :loading="pageState.isCleaning" type="danger"
+                                                plain>执行清理</el-button></el-form-item>
+                                        <el-form-item label="危险操作"><el-button @click="clearShareLog"
+                                                :loading="pageState.isClearingShareLog" type="danger"><el-icon>
+                                                </el-icon>&nbsp;清空分享记录</el-button></el-form-item>
+                                    </div>
+                                </el-form>
+                            </el-tab-pane>
+                            <el-tab-pane name="integrations">
+                                <template #label><span>服务集成<el-tag size="small"
+                                            :type="config.cms_token ? 'success' : 'info'" style="margin-left: 5px;">{{
+                                            config.cms_token ? 'CMS 已连接' : 'CMS' }}</el-tag></span></template>
+                                <el-form label-width="120px" style="max-width: 600px; margin-top:20px;">
+                                    <div class="setting-group-card">
+                                        <h3 class="setting-group-title">CMS 设置</h3>
+                                        <el-form-item label="CMS 域名"><el-input v-model="config.cms_domain"
+                                                placeholder="http://example.com:port" /></el-form-item>
+                                        <el-form-item label="CMS 用户名"><el-input
+                                                v-model="config.cms_username" /></el-form-item>
+                                        <el-form-item label="CMS 密码"><el-input v-model="config.cms_password"
+                                                type="password" show-password /></el-form-item>
+                                        <el-form-item label="同步基础路径"><el-input
+                                                v-model="config.cms_sync_path" /></el-form-item>
+                                        <el-form-item><el-button type="primary" @click="loginToCms"
+                                                :loading="pageState.isLoggingIn">登录并测试</el-button></el-form-item>
+                                    </div>
+                                    <div class="setting-group-card">
+                                        <h3 class="setting-group-title">Emby 设置</h3>
+                                        <el-form-item label="Emby 域名"><el-input v-model="config.emby_domain"
+                                                placeholder="例如: http://192.168.1.10:8096" /></el-form-item>
+                                        <el-form-item label="Emby API Key"><el-input v-model="config.emby_api_key"
+                                                type="password" show-password
+                                                placeholder="请输入 Emby 的 API Key" /></el-form-item>
+                                    </div>
+                                </el-form>
+                            </el-tab-pane>
+                            <el-tab-pane label="Webhook 设置" name="webhooks">
+                                <el-form label-width="120px" style="max-width: 600px; margin-top:20px;">
+                                    <div class="setting-group-card">
+                                        <h3 class="setting-group-title">通知渠道</h3>
+                                        <el-form-item label="飞书 Webhook"><el-input v-model="config.feishu_webhook_url"
+                                                placeholder="请输入飞书群机器人的 Webhook URL" /></el-form-item>
+                                        <el-form-item label="Emby Token"><el-input v-model="config.emby_webhook_token"
+                                                type="password" show-password
+                                                placeholder="自定义一个用于 Emby 通知的安全 Token" /></el-form-item>
+                                    </div>
+                                </el-form>
+                            </el-tab-pane>
+                        </el-tabs>
+                        <div
+                            style="text-align: center; margin-top: 30px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+                            <el-button type="primary" size="large" @click="saveConfig"
+                                :loading="pageState.isSaving">保存所有设置</el-button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+        <div class="fab-share-button" v-if="currentView === 'browser' && selectedFiles.length > 0">
+            <el-button type="primary" size="large" :loading="pageState.isSharing" @click="createShare" circle><el-icon
+                    size="24">
+                    <Promotion />
+                </el-icon></el-button>
+        </div>
+        <el-dialog v-model="transferState.dialogVisible" title="转存并生成新分享" :width="isMobile ? '90%' : '500px'"
+            :close-on-click-modal="!transferState.isLoading">
+            <el-form :model="transferState.form" label-position="top" @submit.prevent>
+                <el-form-item label="分享链接">
+                    <el-input v-model="transferState.form.shareLink" placeholder="请输入115分享链接，可含提取码"></el-input>
+                </el-form-item>
+                <el-form-item label="类型">
+                    <el-select v-model="transferState.form.category" placeholder="请选择分类" filterable
+                        style="width: 100%;">
+                        <el-option v-for="option in flatCategoryOptions" :key="option.value" :label="option.label"
+                            :value="option.value" />
+                    </el-select>
+                </el-form-item>
+            </el-form>
+            <template #footer>
+                <el-button @click="transferState.dialogVisible = false"
+                    :disabled="transferState.isLoading">取消</el-button>
+                <el-button type="primary" @click="handleTransferShare"
+                    :loading="transferState.isLoading">开始转存</el-button>
+            </template>
+        </el-dialog>
+        <el-dialog v-model="statusEditor.visible" title="修改分享状态" :width="isMobile ? '90%' : '400px'">
+            <el-form label-position="top">
+                <el-form-item label="分享内容">
+                    <el-input :value="statusEditor.share.file_name" disabled />
+                </el-form-item>
+                <el-form-item label="设置新状态">
+                    <el-select v-model="statusEditor.newStatus" placeholder="请选择新状态" style="width: 100%;">
+                        <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
+                    </el-select>
+                </el-form-item>
+            </el-form>
+            <template #footer>
+                <el-button @click="statusEditor.visible = false">取消</el-button>
+                <el-button type="primary" @click="updateShareStatus"
+                    :loading="pageState.isUpdatingStatus">确认修改</el-button>
+            </template>
+        </el-dialog>
+    </div>
+    {% endraw %}
+    <script src="https://unpkg.com/vue@3.4.27/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/element-plus@2.7.2/dist/index.full.js"></script>
+    <script src="https://unpkg.com/axios@1.6.8/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue@2.3.1/dist/index.iife.min.js"></script>
+    <script>
+        const { createApp, ref, reactive, onMounted, onUnmounted, watch, nextTick, computed } = Vue;
+
+        const STATUS_MAP = {
+            0: { text: '审核中', type: 'primary' }, 1: { text: '正常', type: 'success' },
+            2: { text: '违规', type: 'danger' }, 3: { text: '已失效', type: 'warning' },
+            4: { text: '已入库', type: 'success' }, 5: { text: '已完成', type: 'info' },
+            6: { text: '清理失败', type: 'danger' }
+        };
+        const UNKNOWN_STATUS = { text: '未知', type: 'info' };
+
+        const app = createApp({
+            setup() {
+                const { Sunny, Moon, Files, Share, Setting, ArrowRight, Folder, Document, Promotion, Delete, Switch, Memo } = ElementPlusIconsVue;
+
+                const isDarkMode = ref(false);
+                const tableRef = ref(null);
+                const currentView = ref('browser');
+                const currentTab = ref('basic');
+                const isMobile = ref(window.innerWidth <= 768);
+                const files = reactive({ list: [], total: 0, currentPage: 1, pageSize: 50 });
+                const currentPath = ref([]);
+                const selectedFiles = ref([]);
+                const logs = ref('');
+                const logContainer = ref(null);
+                let logInterval = null;
+                const config = reactive({
+                    root_cid: '', target_cid: '', task_enabled: false, task_cron: '*/10 * * * *',
+                    task_batch_size: 5, task_api_sleep_seconds: 15, delete_task_enabled: false,
+                    delete_task_cron: '0 4 * * *', delete_task_batch_size: 10, delete_task_sleep_seconds: 30,
+                    delete_task_batch_interval_minutes: 5, delete_api_chunk_size: 115, daily_summary_enabled: true, summary_task_cron: '55 23 * * *',
+                    cms_domain: '', cms_username: '', cms_password: '', cms_token: '', cms_sync_path: '',
+                    emby_domain: '', emby_api_key: '', feishu_webhook_url: '', emby_webhook_token: ''
+                });
+                const shares = reactive({ list: [], total: 0, currentPage: 1, pageSize: 20, statusFilter: '' });
+                const pageState = reactive({ isLoading: false, isSharing: false, isSharesLoading: false, isSaving: false, isLoggingIn: false, isSyncing: {}, isAuditing: false, isCleaning: false, isClearingLog: false, isClearingShareLog: false, isChecking: {}, isCleaningSingle: {}, isUpdatingStatus: false });
+                const transferState = reactive({ dialogVisible: false, isLoading: false, form: { shareLink: '', category: '' } });
+                const statusEditor = reactive({ visible: false, share: {}, newStatus: '' });
+
+                const statusOptions = computed(() => Object.entries(STATUS_MAP).map(([val, { text }]) => ({ value: val, label: text })));
+
+                const flatCategoryOptions = ref([
+                    { label: '动画电影', value: 'Movie/动画电影' }, { label: '华语电影', value: 'Movie/华语电影' },
+                    { label: '外语电影', value: 'Movie/外语电影' }, { label: '儿童', value: 'TV/儿童' },
+                    { label: '国漫', value: 'TV/国漫' }, { label: '日番', value: 'TV/日番' },
+                    { label: '纪录片', value: 'TV/纪录片' }, { label: '综艺', value: 'TV/综艺' },
+                    { label: '国产剧', value: 'TV/国产剧' }, { label: '欧美剧', value: 'TV/欧美剧' },
+                    { label: '日韩剧', value: 'TV/日韩剧' }, { label: '其它', value: 'TV/其它' }
+                ]);
+
+                const fetchLogs = async () => {
+                    try {
+                        const r = await axios.get('/api/logs');
+                        // 将获取到的日志字符串按行分割，反转数组，然后再合并成字符串
+                        if (r.data.logs) {
+                            logs.value = r.data.logs.split('\n').reverse().join('\n');
+                        } else {
+                            logs.value = '';
+                        }
+                        nextTick(() => {
+                            if (logContainer.value) {
+                                // 滚动到顶部以查看最新的日志
+                                logContainer.value.scrollTop = 0;
+                            }
+                        });
+                    } catch (e) {
+                        console.error('获取日志失败', e);
+                    }
+                };
+                const clearAppLog = async () => { try { await ElementPlus.ElMessageBox.confirm('确定要清空当前的运行时日志吗？', '确认', { type: 'warning' }); pageState.isClearingLog = true; await axios.post('/api/logs/clear'); ElMessage.success('运行时日志已清空！'); fetchLogs(); } catch (e) { if (e !== 'cancel') ElMessage.error('操作失败'); } finally { pageState.isClearingLog = false; } };
+                const clearShareLog = async () => { try { await ElementPlus.ElMessageBox.confirm('<strong>这是一个高危操作！</strong><br>将永久删除所有分享记录和任务状态，且无法恢复。<br>您确定要继续吗？', '严重警告', { type: 'error', dangerouslyUseHTMLString: true, confirmButtonText: '我确定，清空所有记录' }); pageState.isClearingShareLog = true; await axios.post('/api/share-log/clear'); ElMessage.success('所有分享记录已清空！'); if (currentView.value === 'shares') { fetchShares(1); } } catch (e) { if (e !== 'cancel') ElMessage.error('操作失败'); } finally { pageState.isClearingShareLog = false; } };
+                const handleResize = () => { isMobile.value = window.innerWidth <= 768; };
+                const fetchConfig = async () => { try { const r = await axios.get('/api/config'); Object.assign(config, r.data); } catch (e) { ElMessage.error('加载配置失败'); } };
+                const saveConfig = async () => { pageState.isSaving = true; try { const r = await axios.post('/api/config', config); ElMessage.success(r.data.message || '设置已保存！'); } catch (e) { ElMessage.error(e.response?.data?.error || '保存配置失败'); } finally { pageState.isSaving = false; } };
+                const loginToCms = async () => { pageState.isLoggingIn = true; try { const r = await axios.post('/api/cms-login', { cms_domain: config.cms_domain, cms_username: config.cms_username, cms_password: config.cms_password }); config.cms_token = r.data.cms_token; ElMessage.success(r.data.message); } catch (e) { config.cms_token = ''; ElMessage.error(e.response?.data?.error || '登录失败'); } finally { pageState.isLoggingIn = false; } };
+                const manualAudit = async () => { pageState.isAuditing = true; try { const r = await axios.post('/api/manual-audit'); ElMessage.success(r.data.message || '审核任务执行完毕！'); } catch (e) { ElMessage.error(e.response?.data?.error || '执行审核任务失败'); } finally { pageState.isAuditing = false; } };
+                const manualClean = async () => { try { await ElementPlus.ElMessageBox.confirm('确定要手动清理吗？这将删除115上所有“已入库”分享的源文件。', '警告', { type: 'warning' }); pageState.isCleaning = true; const r = await axios.post('/api/manual-clean'); ElMessage.success(r.data.message || '清理任务执行完毕！'); } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.error || '执行清理任务失败'); } finally { pageState.isCleaning = false; } };
+
+                const browseDirectory = async (cid, dirName) => {
+                    if (!cid || cid === '0') {
+                        ElMessage.warning('请先在设置中配置根目录 CID');
+                        currentView.value = 'settings';
+                        return;
+                    }
+                    if (cid === config.root_cid) {
+                        currentPath.value = [];
+                    } else {
+                        const idx = currentPath.value.findIndex(p => p.cid === cid);
+                        if (idx !== -1) {
+                            currentPath.value.splice(idx + 1);
+                        } else {
+                            currentPath.value.push({ cid, name: dirName });
+                        }
+                    }
+                    files.currentPage = 1;
+                    await fetchFiles(cid);
+                };
+
+                const fetchFiles = async (cid) => {
+                    pageState.isLoading = true;
+                    try {
+                        const params = { cid, page: files.currentPage, page_size: files.pageSize };
+                        const r = await axios.get('/api/browse', { params });
+                        files.list = r.data.files;
+                        files.total = r.data.total;
+                    } catch (e) {
+                        ElMessage.error(e.response?.data?.error || '加载文件失败');
+                    } finally {
+                        pageState.isLoading = false;
+                    }
+                };
+
+                const handleFilePageChange = (newPage) => {
+                    files.currentPage = newPage;
+                    const currentCid = currentPath.value.length > 0 ? currentPath.value[currentPath.value.length - 1].cid : config.root_cid;
+                    fetchFiles(currentCid);
+                };
+
+                const createShare = async () => {
+                    pageState.isSharing = true;
+                    const filesToShare = selectedFiles.value;
+                    const totalChunks = Math.ceil(filesToShare.length / 5);
+                    try {
+                        const file_ids = filesToShare.map(f => f.id);
+                        const response = await axios.post('/api/create-share', {
+                            file_ids,
+                            current_path: currentPath.value,
+                            selected_names: filesToShare.map(f => f.name)
+                        });
+                        const data = response.data;
+                        if (data.success && data.created_shares) {
+                            const successCount = data.created_shares.length;
+                            ElMessage.success(`操作完成！成功创建 ${successCount} 个分享链接。`);
+                        } else {
+                            ElMessage.error(data.message || '创建分享时发生未知错误');
+                        }
+                        const shared_ids = new Set(file_ids);
+                        files.list.forEach(file => {
+                            if (shared_ids.has(file.id)) {
+                                file.is_shared = true;
+                            }
+                        });
+                        tableRef.value && tableRef.value.clearSelection && tableRef.value.clearSelection();
+                    } catch (e) {
+                        ElMessage.error(e || '创建分享时发生未知错误');
+                    } finally {
+                        pageState.isSharing = false;
+                    }
+                };
+                const fetchShares = async (page = 1) => { pageState.isSharesLoading = true; shares.currentPage = page; const offset = (page - 1) * shares.pageSize; try { const params = { offset, limit: shares.pageSize, status_filter: shares.statusFilter }; const r = await axios.get('/api/my-shares', { params }); shares.list = r.data.shares; shares.total = r.data.total; } catch (e) { ElMessage.error('获取分享列表失败'); } finally { pageState.isSharesLoading = false; } };
+                const deleteShare = async (share) => { try { await ElementPlus.ElMessageBox.confirm('确定要删除这条分享记录吗？', '警告', { type: 'warning' }); await axios.post('/api/delete-share', { share_url: share.share_url }); ElMessage.success('分享记录已删除'); fetchShares(shares.currentPage); } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.error || '删除失败'); } };
+                const openTransferDialog = () => { transferState.form.shareLink = ''; transferState.form.category = ''; transferState.dialogVisible = true; };
+                const handleTransferShare = async () => { if (!transferState.form.shareLink || !transferState.form.category) { ElMessage.warning('请填写所有字段'); return; } transferState.isLoading = true; try { const r = await axios.post('/api/transfer-share', transferState.form); ElMessage.success('转存并创建新分享成功！'); transferState.dialogVisible = false; fetchShares(1); } catch (e) { ElMessage.error(e.response?.data?.error || '转存失败'); } finally { transferState.isLoading = false; } };
+
+                const manualSync = async (share) => { pageState.isSyncing[share.share_url] = true; try { const r = await axios.post('/api/cms-sync-manual', { share_url: share.share_url }); ElMessage.success(r.data.message); fetchShares(shares.currentPage); } catch (e) { ElMessage.error(e.response?.data?.error || '入库失败'); } finally { pageState.isSyncing[share.share_url] = false; } };
+                const checkShare = async (share) => { pageState.isChecking[share.share_url] = true; try { const r = await axios.post('/api/check-share', { share_url: share.share_url }); ElMessage.success(r.data.message); fetchShares(shares.currentPage); } catch (e) { ElMessage.error(e.response?.data?.error || '检查失败'); } finally { pageState.isChecking[share.share_url] = false; } };
+                const cleanShare = async (share) => { try { await ElementPlus.ElMessageBox.confirm('确定要清理这个分享的源文件吗？此操作不可逆！', '警告', { type: 'warning' }); pageState.isCleaningSingle[share.share_url] = true; const r = await axios.post('/api/clean-share', { share_url: share.share_url }); ElMessage.success(r.data.message); fetchShares(shares.currentPage); } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.error || '清理失败'); } finally { pageState.isCleaningSingle[share.share_url] = false; } };
+                const openStatusEditor = (share) => { statusEditor.share = share; statusEditor.newStatus = String(share.status); statusEditor.visible = true; };
+                const updateShareStatus = async () => { pageState.isUpdatingStatus = true; try { const r = await axios.post('/api/update-share-status', { share_url: statusEditor.share.share_url, status: statusEditor.newStatus }); ElMessage.success(r.data.message); statusEditor.visible = false; fetchShares(shares.currentPage); } catch (e) { ElMessage.error(e.response?.data?.error || '更新失败'); } finally { pageState.isUpdatingStatus = false; } };
+
+                const handleSelectionChange = (selection) => { selectedFiles.value = selection; };
+                const formatStatus = (s) => (STATUS_MAP[s] || UNKNOWN_STATUS).text;
+                const getStatusType = (s) => (STATUS_MAP[s] || UNKNOWN_STATUS).type;
+                const toggleTheme = (isDark) => { if (isDark) { document.documentElement.classList.add('dark'); localStorage.setItem('theme', 'dark'); } else { document.documentElement.classList.remove('dark'); localStorage.setItem('theme', 'light'); } };
+
+                onMounted(async () => {
+                    const savedTheme = localStorage.getItem('theme');
+                    if (savedTheme === 'dark') { isDarkMode.value = true; document.documentElement.classList.add('dark'); }
+                    await fetchConfig();
+                    if (currentView.value === 'browser') { browseDirectory(config.root_cid, '根目录'); }
+                    window.addEventListener('resize', handleResize);
+                });
+
+                onUnmounted(() => {
+                    window.removeEventListener('resize', handleResize);
+                    if (logInterval) { clearInterval(logInterval); }
+                });
+
+                watch(currentView, (newView, oldView) => {
+                    if (newView === 'shares') { shares.statusFilter = ''; fetchShares(1); }
+                    if (newView === 'logs') { fetchLogs(); logInterval = setInterval(fetchLogs, 5000); }
+                    if (oldView === 'logs' && logInterval) { clearInterval(logInterval); logInterval = null; }
+                });
+
+                return { Sunny, Moon, Files, Share, Setting, ArrowRight, Folder, Document, Promotion, Delete, Switch, Memo, isDarkMode, tableRef, currentView, currentTab, isMobile, files, currentPath, selectedFiles, pageState, shares, config, transferState, statusOptions, logs, logContainer, flatCategoryOptions, statusEditor, browseDirectory, handleSelectionChange, createShare, fetchShares, saveConfig, deleteShare, formatStatus, getStatusType, loginToCms, manualSync, manualAudit, manualClean, openTransferDialog, handleTransferShare, clearAppLog, clearShareLog, toggleTheme, checkShare, cleanShare, openStatusEditor, updateShareStatus, handleFilePageChange };
+            }
+        });
+        const { ElMessage, ElNotification } = ElementPlus;
+        app.use(ElementPlus);
+        for (const [key, component] of Object.entries(ElementPlusIconsVue)) { app.component(key, component) }
+        app.mount('#app');
+    </script>
+</body>
+
+</html>
