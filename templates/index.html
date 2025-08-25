@@ -46,7 +46,7 @@
 
         #app {
             padding: 24px;
-            max-width: 1400px;
+            max-width: 1600px; /* 适当增加最大宽度以适应三栏布局 */
             margin: 0 auto;
             transition: padding 0.3s ease;
         }
@@ -110,7 +110,7 @@
 
         .main-content-card {
             padding: 24px;
-            min-height: 65vh;
+            min-height: 80vh;
         }
 
         /* --- 3. 特定组件美化与暗黑模式修复 --- */
@@ -272,6 +272,124 @@
         html.dark .el-loading-mask {
             background-color: rgba(29, 35, 42, 0.8) !important;
         }
+        
+        /* --- 批量转存页面优化样式 --- */
+        .batch-transfer-step1-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 50vh;
+        }
+        .batch-transfer-step1-card {
+            padding: 32px;
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            width: 100%;
+            max-width: 600px;
+            text-align: center;
+        }
+        .batch-transfer-step1-card h2 {
+            margin-top: 0;
+            margin-bottom: 24px;
+            font-size: 22px;
+            font-weight: 600;
+            color: var(--text-color-primary);
+        }
+        .batch-transfer-container {
+            display: flex;
+            gap: 24px;
+            height: 80vh;
+        }
+        .batch-transfer-left,
+        .batch-transfer-middle,
+        .batch-transfer-right {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .batch-transfer-left {
+            flex: 5;
+            min-width: 0;
+        }
+        .batch-transfer-middle {
+            flex: 3;
+            min-width: 280px;
+        }
+        .batch-transfer-right {
+            flex: 4;
+            min-width: 300px;
+        }
+        .files-table-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        .files-table-container .el-table {
+            flex-grow: 1;
+        }
+        .control-card {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .execution-card {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .log-card {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .log-card .log-card-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-color-primary);
+            margin: 0 0 10px 0;
+        }
+        .progress-log-container {
+            background-color: var(--app-bg-color);
+            color: var(--text-color-regular);
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', Courier, monospace;
+            height: 100%;
+            flex-grow: 1;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 13px;
+            text-align: left;
+        }
+        .el-progress__text .percentage-value {
+            display: block;
+            font-size: 24px;
+        }
+        .el-progress__text .percentage-label {
+            display: block;
+            font-size: 12px;
+            margin-top: 5px;
+            color: var(--text-color-secondary);
+        }
+        .fade-in-fast-enter-active,
+        .fade-in-fast-leave-active {
+            transition: opacity 0.2s ease;
+        }
+        .fade-in-fast-enter-from,
+        .fade-in-fast-leave-to {
+            opacity: 0;
+        }
 
         /* --- 4. 响应式布局优化 --- */
         @media (max-width: 768px) {
@@ -354,26 +472,26 @@
                 margin-left: 0 !important;
             }
         }
+        
+        @media (max-width: 1200px) { /* 适配三栏到单栏的断点 */
+            .batch-transfer-container {
+                flex-direction: column;
+                height: auto;
+            }
+        }
     </style>
 </head>
 
 <body>
     {% raw %}
     <div id="app">
-        <header class="app-header">
-            <div class="title-area">
-                <h1>115 智能管理器</h1>
-                <p>文件浏览、分享与自动化</p>
-            </div>
-            <el-switch v-model="isDarkMode" @change="toggleTheme" inline-prompt :active-icon="Moon"
-                :inactive-icon="Sunny" style="--el-switch-on-color: #2c2c2c; --el-switch-off-color: #f2f2f2;" />
-        </header>
         <main>
             <div class="view-switcher">
                 <el-radio-group v-model="currentView">
                     <el-radio-button label="browser"><el-icon>
                             <Files />
                         </el-icon>&nbsp;文件浏览</el-radio-button>
+                    <el-radio-button label="batch-transfer"><el-icon><Collection /></el-icon>&nbsp;批量转存</el-radio-button>
                     <el-radio-button label="shares"><el-icon>
                             <Share />
                         </el-icon>&nbsp;我的分享</el-radio-button>
@@ -429,6 +547,140 @@
                             @current-change="handleFilePageChange" />
                     </div>
                 </div>
+
+                <div v-if="currentView === 'batch-transfer'">
+                    <div v-if="batchTransfer.step === 1" class="batch-transfer-step1-container">
+                        <div class="batch-transfer-step1-card">
+                            <h2>开始新的批量转存任务</h2>
+                            <el-form @submit.prevent>
+                                <el-form-item>
+                                    <el-input v-model="batchTransfer.shareLink" placeholder="请在此处粘贴115分享链接" size="large" :disabled="batchTransfer.isFileLoading"></el-input>
+                                </el-form-item>
+                                <el-form-item>
+                                    <el-button type="primary" size="large" @click="initiateFetchShareFiles" :loading="batchTransfer.isFileLoading" style="width: 100%;">
+                                        {{ batchTransfer.isFileLoading ? '正在解析链接...' : '下一步：选择文件' }}
+                                    </el-button>
+                                </el-form-item>
+                            </el-form>
+                        </div>
+                    </div>
+
+                    <div v-if="batchTransfer.step === 2">
+                        <div style="display: flex; align-items: center; margin-bottom: 16px;">
+                            <el-button :icon="ArrowLeft" @click="resetBatchTransfer" :disabled="batchTransfer.isTaskRunning">返回</el-button>
+                            <el-breadcrumb separator-icon="ArrowRight" style="margin-left: 16px;">
+                                <el-breadcrumb-item><a @click="!batchTransfer.isTaskRunning && browseShareDirectory('0', '根目录')">根目录</a></el-breadcrumb-item>
+                                <el-breadcrumb-item v-for="part in batchTransfer.currentPath" :key="part.id"><a
+                                        @click="!batchTransfer.isTaskRunning && browseShareDirectory(part.id, part.name)">{{ part.name }}</a></el-breadcrumb-item>
+                            </el-breadcrumb>
+                        </div>
+                        <div class="batch-transfer-container">
+                            <div class="batch-transfer-left">
+                                <div class="files-table-container">
+                                    <el-table
+                                        ref="batchFilesTableRef"
+                                        :data="batchTransfer.files"
+                                        v-loading="batchTransfer.isFileLoading"
+                                        @selection-change="handleBatchFileSelectionChange"
+                                        style="width: 100%;"
+                                        height="100%"
+                                        row-key="id"
+                                    >
+                                        <template #empty><el-empty description="此目录为空或链接解析失败" /></template>
+                                        <el-table-column type="selection" width="55" fixed="left" :reserve-selection="true" :disabled="batchTransfer.isTaskRunning"></el-table-column>
+                                        <el-table-column label="文件名" prop="name" min-width="200" show-overflow-tooltip>
+                                            <template #default="scope">
+                                                <el-icon><component :is="scope.row.is_dir ? 'Folder' : 'Document'" /></el-icon>
+                                                <span :class="{ 'folder-link': scope.row.is_dir }"
+                                                      @click="!batchTransfer.isTaskRunning && scope.row.is_dir && browseShareDirectory(scope.row.id, scope.row.name)"
+                                                      style="margin-left: 10px; vertical-align: middle;">
+                                                    {{ scope.row.name }}
+                                                </span>
+                                            </template>
+                                        </el-table-column>
+                                        <el-table-column prop="time" label="修改日期" width="180"></el-table-column>
+                                    </el-table>
+                                </div>
+                                <div class="pagination-block" v-if="batchTransfer.total > 0">
+                                    <el-pagination background
+                                        layout="total, sizes, prev, pager, next, jumper"
+                                        :page-sizes="[50, 100, 200, 500]"
+                                        :total="batchTransfer.total"
+                                        v-model:page-size="batchTransfer.pageSize"
+                                        v-model:current-page="batchTransfer.currentPage"
+                                        @size-change="handleBatchPageSizeChange"
+                                        @current-change="fetchShareFiles"
+                                        :disabled="batchTransfer.isTaskRunning"
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="batch-transfer-middle">
+                                <div class="control-card">
+                                    <el-form label-position="top" :disabled="batchTransfer.isTaskRunning">
+                                        <el-form-item>
+                                            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                                                <span style="font-weight: 500;">已选文件: <el-tag size="small" style="margin-left: 8px;">{{ batchTransfer.selectedFiles.length }} / {{ batchTransfer.total }}</el-tag></span>
+                                                <div>
+                                                    <el-button @click="selectAllFilesOnAllPages" :disabled="batchTransfer.total === 0 || batchTransfer.isFileLoading">全选</el-button>
+                                                    <el-button @click="clearBatchSelection">清空</el-button>
+                                                </div>
+                                            </div>
+                                        </el-form-item>
+                                        <el-divider>任务配置</el-divider>
+                                        <el-form-item label="每批处理数量" v-if="!batchTransfer.isTaskRunning">
+                                            <el-input-number v-model="batchTransfer.config.batchSize" :min="1" :max="100" style="width:100%" />
+                                        </el-form-item>
+                                        <el-form-item label="批次间隔 (秒)" v-if="!batchTransfer.isTaskRunning">
+                                            <el-input-number v-model="batchTransfer.config.interval" :min="5" style="width:100%" />
+                                        </el-form-item>
+                                        <el-form-item label="选择分类" v-if="!batchTransfer.isTaskRunning">
+                                            <el-select v-model="batchTransfer.config.category" placeholder="请选择分类" style="width: 100%;">
+                                                <el-option v-for="option in flatCategoryOptions" :key="option.value" :label="option.label" :value="option.value" />
+                                            </el-select>
+                                        </el-form-item>
+                                    </form>
+                                </div>
+                                
+                                <div class="execution-card">
+                                    <transition name="fade-in-fast" mode="out-in">
+                                        <div v-if="!batchTransfer.isTaskRunning" key="ready">
+                                            <p v-if="batchTransfer.selectedFiles.length > 0">
+                                                准备就绪：已选择 <b>{{ batchTransfer.selectedFiles.length }}</b> 个文件, 将被分为 <b>{{ Math.ceil(batchTransfer.selectedFiles.length / batchTransfer.config.batchSize) }}</b> 批处理。
+                                            </p>
+                                            <p v-else style="color: var(--text-color-secondary);">请先在左侧选择要转存的文件。</p>
+                                            <el-button type="success" size="large" @click="startBatchTransfer" :disabled="!canStartBatchTransfer" style="width: 100%; margin-top: 16px;">
+                                                开始批量转存
+                                            </el-button>
+                                        </div>
+                                        <div v-else key="running">
+                                            <el-progress type="dashboard" :percentage="progressPercentage" :color="progressColors">
+                                                <template #default="{ percentage }">
+                                                    <span class="percentage-value">{{ percentage }}%</span>
+                                                    <span class="percentage-label">处理中</span>
+                                                </template>
+                                            </el-progress>
+                                            <p><b>{{ batchTransfer.processedFilesCount }} / {{ batchTransfer.totalFilesToProcess }}</b></p>
+                                            <el-button type="danger" @click="stopBatchTransfer" style="width: 100%; margin-top: 16px;">
+                                                强制停止任务
+                                            </el-button>
+                                        </div>
+                                    </transition>
+                                </div>
+                            </div>
+
+                            <div class="batch-transfer-right">
+                                <div class="log-card">
+                                    <h3 class="log-card-title">实时日志</h3>
+                                    <div class="progress-log-container" ref="batchLogContainer">
+                                        <pre>{{ batchTransfer.logs.join('\n') }}</pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div v-if="currentView === 'shares'">
                     <div class="shares-toolbar">
                         <el-radio-group v-model="shares.statusFilter" @change="fetchShares(1)">
@@ -670,6 +922,7 @@
     {% endraw %}
     <script src="https://unpkg.com/vue@3.4.27/dist/vue.global.js"></script>
     <script src="https://unpkg.com/element-plus@2.7.2/dist/index.full.js"></script>
+    <script src="https://unpkg.com/element-plus@2.7.2/dist/locale/zh-cn.mjs"></script>
     <script src="https://unpkg.com/axios@1.6.8/dist/axios.min.js"></script>
     <script src="https://unpkg.com/@element-plus/icons-vue@2.3.1/dist/index.iife.min.js"></script>
     <script>
@@ -685,13 +938,14 @@
 
         const app = createApp({
             setup() {
-                const { Sunny, Moon, Files, Share, Setting, ArrowRight, Folder, Document, Promotion, Delete, Switch, Memo } = ElementPlusIconsVue;
+                const { Sunny, Moon, Files, Share, Setting, ArrowRight, ArrowLeft, Folder, Document, Promotion, Delete, Switch, Memo, Collection } = ElementPlusIconsVue;
 
                 const isDarkMode = ref(false);
                 const tableRef = ref(null);
                 const currentView = ref('browser');
                 const currentTab = ref('basic');
                 const isMobile = ref(window.innerWidth <= 768);
+                const activeCollapse = ref('1');
                 const files = reactive({ list: [], total: 0, currentPage: 1, pageSize: 50 });
                 const currentPath = ref([]);
                 const selectedFiles = ref([]);
@@ -710,9 +964,7 @@
                 const pageState = reactive({ isLoading: false, isSharing: false, isSharesLoading: false, isSaving: false, isLoggingIn: false, isSyncing: {}, isAuditing: false, isCleaning: false, isClearingLog: false, isClearingShareLog: false, isChecking: {}, isCleaningSingle: {}, isUpdatingStatus: false });
                 const transferState = reactive({ dialogVisible: false, isLoading: false, form: { shareLink: '', category: '' } });
                 const statusEditor = reactive({ visible: false, share: {}, newStatus: '' });
-
                 const statusOptions = computed(() => Object.entries(STATUS_MAP).map(([val, { text }]) => ({ value: val, label: text })));
-
                 const flatCategoryOptions = ref([
                     { label: '动画电影', value: 'Movie/动画电影' }, { label: '华语电影', value: 'Movie/华语电影' },
                     { label: '外语电影', value: 'Movie/外语电影' }, { label: '儿童', value: 'TV/儿童' },
@@ -721,6 +973,194 @@
                     { label: '国产剧', value: 'TV/国产剧' }, { label: '欧美剧', value: 'TV/欧美剧' },
                     { label: '日韩剧', value: 'TV/日韩剧' }, { label: '其它', value: 'TV/其它' }
                 ]);
+
+                const progressColors = [
+                    { color: '#f56c6c', percentage: 20 }, { color: '#e6a23c', percentage: 40 },
+                    { color: '#6f7ad3', percentage: 60 }, { color: '#1989fa', percentage: 80 },
+                    { color: '#5cb87a', percentage: 100 },
+                ];
+                
+                const batchFilesTableRef = ref(null);
+                const batchLogContainer = ref(null);
+                const batchTransfer = reactive({
+                    step: 1, shareLink: '', files: [], total: 0, currentPage: 1, pageSize: 50,
+                    selectedFiles: [], currentPath: [], isFileLoading: false, isTaskRunning: false,
+                    processedFilesCount: 0, totalFilesToProcess: 0,
+                    config: { batchSize: 5, interval: 30, category: '' },
+                    logs: [],
+                    taskId: null, taskStatusPoller: null,
+                });
+
+                const canStartBatchTransfer = computed(() => {
+                    return batchTransfer.selectedFiles.length > 0 && 
+                           batchTransfer.config.category && 
+                           !batchTransfer.isTaskRunning;
+                });
+
+                const progressPercentage = computed(() => {
+                    if (batchTransfer.totalFilesToProcess === 0) return 0;
+                    const percentage = (batchTransfer.processedFilesCount / batchTransfer.totalFilesToProcess) * 100;
+                    return Math.floor(percentage);
+                });
+
+                const resetBatchTransfer = () => {
+                    stopBatchTransfer(false);
+                    batchTransfer.step = 1; batchTransfer.files = []; batchTransfer.total = 0;
+                    batchTransfer.selectedFiles = []; batchTransfer.currentPath = []; batchTransfer.logs = [];
+                    batchTransfer.isTaskRunning = false; batchTransfer.processedFilesCount = 0;
+                    batchTransfer.totalFilesToProcess = 0; batchTransfer.taskId = null;
+                };
+
+                const initiateFetchShareFiles = async () => {
+                    if (!batchTransfer.shareLink) { ElMessage.warning('请输入分享链接'); return; }
+                    batchTransfer.isFileLoading = true;
+                    batchTransfer.currentPath = [];
+                    await fetchShareFiles(1);
+                    if (batchTransfer.total > 0 || batchTransfer.files.length > 0) {
+                        batchTransfer.step = 2;
+                        batchTransfer.logs = ['请在左侧选择文件，然后在中间配置任务并开始。'];
+                    }
+                    batchTransfer.isFileLoading = false;
+                };
+
+                const browseShareDirectory = (cid, name) => {
+                    if (cid === '0') {
+                        batchTransfer.currentPath = [];
+                    } else {
+                        const index = batchTransfer.currentPath.findIndex(p => p.id === cid);
+                        if (index !== -1) {
+                            batchTransfer.currentPath.splice(index + 1);
+                        } else {
+                            batchTransfer.currentPath.push({ id: cid, name: name });
+                        }
+                    }
+                    fetchShareFiles(1);
+                };
+
+                const fetchShareFiles = async (page = 1) => {
+                    batchTransfer.isFileLoading = true;
+                    batchTransfer.currentPage = page;
+                    const currentCid = batchTransfer.currentPath.length > 0 ? batchTransfer.currentPath[batchTransfer.currentPath.length - 1].id : '0';
+                    try {
+                        const params = { shareLink: batchTransfer.shareLink, page: batchTransfer.currentPage, pageSize: batchTransfer.pageSize, cid: currentCid };
+                        const r = await axios.get('/api/share-files', { params });
+                        batchTransfer.files = r.data.files;
+                        batchTransfer.total = r.data.total;
+                    } catch (e) {
+                        ElMessage.error(e.response?.data?.error || '获取文件列表失败');
+                        batchTransfer.files = []; batchTransfer.total = 0;
+                    } finally {
+                        batchTransfer.isFileLoading = false;
+                    }
+                };
+
+                const handleBatchPageSizeChange = (newPageSize) => {
+                    batchTransfer.pageSize = newPageSize;
+                    fetchShareFiles(1);
+                };
+                
+                const handleBatchFileSelectionChange = (selection) => {
+                    batchTransfer.selectedFiles = selection;
+                };
+                
+                const clearBatchSelection = () => {
+                    batchFilesTableRef.value?.clearSelection();
+                };
+
+                const selectAllFilesOnAllPages = async () => {
+                     ElMessage.warning('“选择全部”功能暂未实现，当前只会选中本页文件。');
+                     batchFilesTableRef.value?.toggleAllSelection();
+                };
+                
+                const startBatchTransfer = async () => {
+                    try {
+                        batchTransfer.isTaskRunning = true;
+                        batchTransfer.totalFilesToProcess = batchTransfer.selectedFiles.length;
+                        batchTransfer.processedFilesCount = 0;
+                        batchTransfer.logs = [];
+                        logToBatchPanel('[INFO] 任务已启动，正在向后端发送请求...');
+
+                        const payload = {
+                            shareLink: batchTransfer.shareLink,
+                            file_ids: batchTransfer.selectedFiles.map(f => f.id),
+                            file_names: batchTransfer.selectedFiles.map(f => f.name),
+                            config: batchTransfer.config
+                        };
+                        const r = await axios.post('/api/batch-transfer/start', payload);
+                        
+                        batchTransfer.taskId = r.data.taskId;
+                        logToBatchPanel(`[SUCCESS] ${r.data.message}`);
+                        
+                        pollTaskStatus();
+
+                    } catch (e) {
+                        const errorMsg = e|| '启动任务失败';
+                        ElMessage.error(errorMsg);
+                        logToBatchPanel(`[ERROR] ${errorMsg}`);
+                        batchTransfer.isTaskRunning = false;
+                    }
+                };
+                
+                const pollTaskStatus = () => {
+                    if (batchTransfer.taskStatusPoller) {
+                        clearInterval(batchTransfer.taskStatusPoller);
+                    }
+                    batchTransfer.taskStatusPoller = setInterval(async () => {
+                        await fetchTaskStatus();
+                    }, 3000);
+                };
+                
+                const fetchTaskStatus = async () => {
+                    if (!batchTransfer.taskId) return;
+                    try {
+                        const r = await axios.get('/api/batch-transfer/status', { params: { taskId: batchTransfer.taskId } });
+                        const data = r.data;
+
+                        batchTransfer.processedFilesCount = data.processed;
+                        batchTransfer.logs = data.logs;
+                        logToBatchPanel_silent(); // 仅滚动
+
+                        if (data.status === 'completed' || data.status === 'failed') {
+                            stopBatchTransfer(false);
+                            ElNotification({
+                                title: data.status === 'completed' ? '任务已完成' : '任务失败',
+                                message: data.logs[data.logs.length - 1] || '请查看日志获取详情',
+                                type: data.status === 'completed' ? 'success' : 'error',
+                                duration: 8000
+                            });
+                        }
+                    } catch (e) {
+                        console.error('轮询任务状态失败', e);
+                        stopBatchTransfer(false);
+                         ElMessage.error('轮询任务状态失败，请检查网络或刷新页面。');
+                    }
+                };
+
+                const stopBatchTransfer = (showAlert = true) => {
+                    if (batchTransfer.taskStatusPoller) {
+                        clearInterval(batchTransfer.taskStatusPoller);
+                        batchTransfer.taskStatusPoller = null;
+                    }
+                    batchTransfer.isTaskRunning = false;
+                    if(showAlert) {
+                        logToBatchPanel('[WARNING] 前端任务监控已停止，但后台可能仍在运行。');
+                        ElMessage.warning('已停止前端监控，后台任务可能仍在运行。');
+                    }
+                };
+                
+                const logToBatchPanel = (message) => {
+                    const now = new Date().toLocaleTimeString();
+                    batchTransfer.logs.push(`[${now}] ${message}`);
+                    logToBatchPanel_silent();
+                };
+                
+                const logToBatchPanel_silent = () => {
+                     nextTick(() => {
+                        if (batchLogContainer.value) {
+                            batchLogContainer.value.scrollTop = batchLogContainer.value.scrollHeight;
+                        }
+                    });
+                };
 
                 const fetchLogs = async () => {
                     try {
@@ -747,7 +1187,6 @@
                 const loginToCms = async () => { pageState.isLoggingIn = true; try { const r = await axios.post('/api/cms-login', { cms_domain: config.cms_domain, cms_username: config.cms_username, cms_password: config.cms_password }); config.cms_token = r.data.cms_token; ElMessage.success(r.data.message); } catch (e) { config.cms_token = ''; ElMessage.error(e.response?.data?.error || '登录失败'); } finally { pageState.isLoggingIn = false; } };
                 const manualAudit = async () => { pageState.isAuditing = true; try { const r = await axios.post('/api/manual-audit'); ElMessage.success(r.data.message || '审核任务执行完毕！'); } catch (e) { ElMessage.error(e.response?.data?.error || '执行审核任务失败'); } finally { pageState.isAuditing = false; } };
                 const manualClean = async () => { try { await ElementPlus.ElMessageBox.confirm('确定要手动清理吗？这将删除115上所有“已入库”分享的源文件。', '警告', { type: 'warning' }); pageState.isCleaning = true; const r = await axios.post('/api/manual-clean'); ElMessage.success(r.data.message || '清理任务执行完毕！'); } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.error || '执行清理任务失败'); } finally { pageState.isCleaning = false; } };
-                
                 const browseDirectory = async (cid, dirName) => {
                     if (!cid || cid === '0') {
                         ElMessage.warning('请先在设置中配置根目录 CID');
@@ -767,7 +1206,6 @@
                     files.currentPage = 1; 
                     await fetchFiles(cid);
                 };
-
                 const fetchFiles = async (cid) => {
                     pageState.isLoading = true;
                     try {
@@ -781,24 +1219,20 @@
                         pageState.isLoading = false;
                     }
                 };
-                
                 const handleFilePageChange = (newPage) => {
                     files.currentPage = newPage;
                     const currentCid = currentPath.value.length > 0 ? currentPath.value[currentPath.value.length - 1].cid : config.root_cid;
                     fetchFiles(currentCid);
                 };
-                
                 const handleFileSizeChange = (newPageSize) => {
                     files.pageSize = newPageSize;
-                    files.currentPage = 1; // 重置到第一页
+                    files.currentPage = 1;
                     const currentCid = currentPath.value.length > 0 ? currentPath.value[currentPath.value.length - 1].cid : config.root_cid;
                     fetchFiles(currentCid);
                 };
-
                 const createShare = async () => {
                     pageState.isSharing = true;
                     const filesToShare = selectedFiles.value;
-                    const totalChunks = Math.ceil(filesToShare.length / 5);
                     try {
                         const file_ids = filesToShare.map(f => f.id);
                         const response = await axios.post('/api/create-share', {
@@ -819,9 +1253,9 @@
                                 file.is_shared = true;
                             }
                         });
-                        tableRef.value && tableRef.value.clearSelection && tableRef.value.clearSelection();
+                        tableRef.value?.clearSelection();
                     } catch (e) {
-                        ElMessage.error(e || '创建分享时发生未知错误');
+                        ElMessage.error(e.response?.data?.error || '创建分享时发生未知错误');
                     } finally {
                         pageState.isSharing = false;
                     }
@@ -841,23 +1275,18 @@
                         pageState.isSharesLoading = false; 
                     } 
                 };
-                
-                // [新增] 我的分享视图的每页条数变更处理器
                 const handleShareSizeChange = (newPageSize) => {
                     shares.pageSize = newPageSize;
-                    fetchShares(1); // El-pagination v-model 会自动更新 currentPage, 但我们最好重置到第一页
+                    fetchShares(1);
                 };
-
                 const deleteShare = async (share) => { try { await ElementPlus.ElMessageBox.confirm('确定要删除这条分享记录吗？', '警告', { type: 'warning' }); await axios.post('/api/delete-share', { share_url: share.share_url }); ElMessage.success('分享记录已删除'); fetchShares(shares.currentPage); } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.error || '删除失败'); } };
                 const openTransferDialog = () => { transferState.form.shareLink = ''; transferState.form.category = ''; transferState.dialogVisible = true; };
                 const handleTransferShare = async () => { if (!transferState.form.shareLink || !transferState.form.category) { ElMessage.warning('请填写所有字段'); return; } transferState.isLoading = true; try { const r = await axios.post('/api/transfer-share', transferState.form); ElMessage.success('转存并创建新分享成功！'); transferState.dialogVisible = false; fetchShares(1); } catch (e) { ElMessage.error(e.response?.data?.error || '转存失败'); } finally { transferState.isLoading = false; } };
-
                 const manualSync = async (share) => { pageState.isSyncing[share.share_url] = true; try { const r = await axios.post('/api/cms-sync-manual', { share_url: share.share_url }); ElMessage.success(r.data.message); fetchShares(shares.currentPage); } catch (e) { ElMessage.error(e.response?.data?.error || '入库失败'); } finally { pageState.isSyncing[share.share_url] = false; } };
                 const checkShare = async (share) => { pageState.isChecking[share.share_url] = true; try { const r = await axios.post('/api/check-share', { share_url: share.share_url }); ElMessage.success(r.data.message); fetchShares(shares.currentPage); } catch (e) { ElMessage.error(e.response?.data?.error || '检查失败'); } finally { pageState.isChecking[share.share_url] = false; } };
                 const cleanShare = async (share) => { try { await ElementPlus.ElMessageBox.confirm('确定要清理这个分享的源文件吗？此操作不可逆！', '警告', { type: 'warning' }); pageState.isCleaningSingle[share.share_url] = true; const r = await axios.post('/api/clean-share', { share_url: share.share_url }); ElMessage.success(r.data.message); fetchShares(shares.currentPage); } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.error || '清理失败'); } finally { pageState.isCleaningSingle[share.share_url] = false; } };
                 const openStatusEditor = (share) => { statusEditor.share = share; statusEditor.newStatus = String(share.status); statusEditor.visible = true; };
                 const updateShareStatus = async () => { pageState.isUpdatingStatus = true; try { const r = await axios.post('/api/update-share-status', { share_url: statusEditor.share.share_url, status: statusEditor.newStatus }); ElMessage.success(r.data.message); statusEditor.visible = false; fetchShares(shares.currentPage); } catch (e) { ElMessage.error(e.response?.data?.error || '更新失败'); } finally { pageState.isUpdatingStatus = false; } };
-
                 const handleSelectionChange = (selection) => { selectedFiles.value = selection; };
                 const formatStatus = (s) => (STATUS_MAP[s] || UNKNOWN_STATUS).text;
                 const getStatusType = (s) => (STATUS_MAP[s] || UNKNOWN_STATUS).type;
@@ -882,7 +1311,18 @@
                     if (oldView === 'logs' && logInterval) { clearInterval(logInterval); logInterval = null; }
                 });
 
-                return { Sunny, Moon, Files, Share, Setting, ArrowRight, Folder, Document, Promotion, Delete, Switch, Memo, isDarkMode, tableRef, currentView, currentTab, isMobile, files, currentPath, selectedFiles, pageState, shares, config, transferState, statusOptions, logs, logContainer, flatCategoryOptions, statusEditor, browseDirectory, handleSelectionChange, createShare, fetchShares, saveConfig, deleteShare, formatStatus, getStatusType, loginToCms, manualSync, manualAudit, manualClean, openTransferDialog, handleTransferShare, clearAppLog, clearShareLog, toggleTheme, checkShare, cleanShare, openStatusEditor, updateShareStatus, handleFilePageChange };
+                return { 
+                    Sunny, Moon, Files, Share, Setting, ArrowRight, ArrowLeft, Folder, Document, Promotion, Delete, Switch, Memo, Collection, 
+                    isDarkMode, tableRef, currentView, currentTab, isMobile, files, currentPath, selectedFiles, pageState, shares, config, transferState, 
+                    statusOptions, logs, logContainer, flatCategoryOptions, statusEditor, browseDirectory, handleSelectionChange, createShare, fetchShares, 
+                    saveConfig, deleteShare, formatStatus, getStatusType, loginToCms, manualSync, manualAudit, manualClean, openTransferDialog, 
+                    handleTransferShare, clearAppLog, clearShareLog, toggleTheme, checkShare, cleanShare, openStatusEditor, updateShareStatus, 
+                    handleFilePageChange, handleFileSizeChange, handleShareSizeChange, activeCollapse,
+                    batchFilesTableRef, batchLogContainer, batchTransfer, canStartBatchTransfer, fetchShareFiles, handleBatchPageSizeChange,
+                    handleBatchFileSelectionChange, clearBatchSelection, selectAllFilesOnAllPages, startBatchTransfer,
+                    initiateFetchShareFiles, browseShareDirectory, resetBatchTransfer, stopBatchTransfer,
+                    progressPercentage, progressColors
+                };
             }
         });
         const { ElMessage, ElNotification } = ElementPlus;

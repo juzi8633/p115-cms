@@ -5,6 +5,7 @@ import traceback
 import asyncio
 import httpx
 import logging
+import uuid
 from quart import request, jsonify, render_template, current_app
 from p115client.tool.util import share_extract_payload
 from cachetools import TTLCache
@@ -21,6 +22,8 @@ log = logging.getLogger(__name__)
 # --- 缓存实例 ---
 browse_cache = TTLCache(maxsize=512, ttl=120)
 
+# --- [新增] 批量转存任务状态管理器 ---
+batch_tasks = {}
 
 # --- 辅助函数：单个分享状态检查逻辑 ---
 async def _check_single_share_status(share: Shares):
@@ -156,12 +159,10 @@ async def api_cms_sync_manual():
 @app.route('/api/browse')
 async def api_browse():
     cid = request.args.get('cid', APP_CONFIG.get('root_cid'))
-    # 接收分页参数，并设置默认值
     page = request.args.get('page', 1, type=int)
     page_size = request.args.get('page_size', 50, type=int)
     offset = (page - 1) * page_size
 
-    # 修改缓存键以包含页码
     cache_key = f"browse_{cid}_p{page}"
     
     if cache_key in browse_cache:
@@ -171,7 +172,6 @@ async def api_browse():
     if not p115_client: 
         return jsonify({"error": "服务器端115客户端未初始化"}), 500
     try:
-        # 构造带有分页参数的 payload
         payload = {
             "cid": cid, 
             "limit": page_size,
@@ -186,7 +186,6 @@ async def api_browse():
             return jsonify({"error": f"从115获取文件列表失败: {list_response.get('error', '未知API错误')}"}), 500
         
         items_from_115 = list_response.get("data", [])
-        # 从API响应中获取文件总数
         total_count = list_response.get("count", 0)
         
         item_cids = [str(item.get('cid') or item.get('fid') or item.get('file_id')) for item in items_from_115]
@@ -261,9 +260,7 @@ async def api_create_share():
     CHUNK_SIZE = 5
     created_shares_result = []
     
-    # --- 主循环开始 ---
     for i in range(0, len(selected_items), CHUNK_SIZE):
-        # 步骤 1: 取出一批文件
         chunk = selected_items[i:i + CHUNK_SIZE]
         chunk_file_ids = [item[0] for item in chunk]
         chunk_names = [item[1] for item in chunk]
@@ -271,27 +268,22 @@ async def api_create_share():
         log.info(f"开始创建第 {i//CHUNK_SIZE + 1} 批分享，包含 {len(chunk_names)} 个文件...")
 
         try:
-            # 步骤 2: 调用 115 API 创建分享
             r = await asyncio.to_thread(
                 p115_client.share_send_app, 
                 {"file_ids": ",".join(chunk_file_ids), "ignore_warn": 1}
             )
             
-            # 步骤 3: 检查 API 调用结果
             if not r.get("state"):
                 error_msg = f"创建分享失败: {r.get('error')}"
                 log.error(error_msg)
-                # 如果失败，立即返回，created_shares_result 中包含了已经成功入库的数据
                 return jsonify({"error": error_msg, "created_shares": created_shares_result}), 500
             
-            # 调用成功，继续处理
             d = r.get("data", {})
             await asyncio.to_thread(
                 p115_client.share_update_app, 
                 {"share_code": d.get("share_code"), "share_duration": -1}
             )
             
-            # 步骤 4: 构造 ORM 对象
             new_share = Shares(
                 timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
                 path_hierarchy=json.dumps(current_path),
@@ -303,21 +295,17 @@ async def api_create_share():
                 status=0
             )
 
-            # 步骤 5: 写入数据库并提交
-            # get_session 上下文管理器会在 with 块成功结束后自动提交事务
             async with get_session() as session:
                 session.add(new_share)
             
             log.info(f"成功创建分享并已存入数据库: {new_share.share_title}")
 
-            # 步骤 6: 收集成功结果
             created_shares_result.append({
                 "new_url": new_share.share_url, 
                 "password": new_share.receive_code,
                 "title": new_share.share_title
             })
 
-            # 步骤 7: 执行延时 (如果不是最后一批)
             if i + CHUNK_SIZE < len(selected_items):
                 log.debug("批次间休眠 3 秒...")
                 await asyncio.sleep(3)
@@ -326,60 +314,25 @@ async def api_create_share():
             error_msg = f"处理分享批次时发生意外错误: {e}"
             log.error(error_msg, exc_info=True)
             return jsonify({"error": error_msg, "created_shares": created_shares_result}), 500
-    # --- 主循环结束 ---
-
-    # 循环结束后的操作 1: 清理缓存
-    if created_shares_result:
-        if current_path:
-            parent_cid = current_path[-1]['cid']
-            cache_key = f"browse_{parent_cid}"
-            browse_cache.pop(cache_key, None)
-            log.info(f"因创建分享，清除了目录缓存: {cache_key}")
-        else:
-            root_cid = APP_CONFIG.get('root_cid', '0')
-            cache_key = f"browse_{root_cid}"
-            browse_cache.pop(cache_key, None)
-            log.info(f"因创建分享，清除了根目录缓存: {cache_key}")
 
     log.info(f"全部分享创建完成，共生成 {len(created_shares_result)} 个新的分享链接。")
     
-    # 循环结束后的操作 2: 返回最终结果
     return jsonify({
         "success": True, 
         "message": f"操作完成，成功创建 {len(created_shares_result)} 个分享链接。",
         "created_shares": created_shares_result
     })
 
-# --- 变更: 修改 /api/delete-share 接口以清理缓存 ---
 @app.route('/api/delete-share', methods=['POST'])
 async def api_delete_share():
     data = await request.get_json()
     url = data.get('share_url')
     async with task_lock:
         async with get_session() as session:
-            # 1. 首先，检索条目以获取其路径信息
             entry_to_delete = await session.get(Shares, url)
             if entry_to_delete:
-                # 2. 清理其父目录的缓存
-                try:
-                    path_hierarchy = json.loads(entry_to_delete.path_hierarchy)
-                    if path_hierarchy:
-                        # 分享自某个子目录
-                        parent_cid = path_hierarchy[-1]['cid']
-                        cache_key = f"browse_{parent_cid}"
-                        browse_cache.pop(cache_key, None)
-                        log.info(f"因删除分享，清除了目录缓存: {cache_key}")
-                    else:
-                        # 分享自根目录
-                        root_cid = APP_CONFIG.get('root_cid', '0')
-                        cache_key = f"browse_{root_cid}"
-                        browse_cache.pop(cache_key, None)
-                        log.info(f"因删除分享，清除了根目录缓存: {cache_key}")
-                except (json.JSONDecodeError, IndexError, TypeError) as e:
-                    log.warning(f"删除分享时解析路径失败，无法清除缓存: {e}")
-
-                # 3. 现在，删除数据库中的条目
                 await session.delete(entry_to_delete)
+                log.info(f"已从数据库中删除分享记录: {url}")
                 
     return jsonify({"success": True})
 
@@ -509,7 +462,7 @@ async def api_transfer_share():
             raise ValueError("在临时目录中未找到转存的文件")
         
         transferred_file_ids = [str(item.get('fid') or item.get('cid')) for item in list_data]
-        file_names = [item.get('fn') for item in list_data]
+        file_names = [item.get('fn') or item.get('n') for item in list_data]
         
         share_send_data = await asyncio.to_thread(p115_client.share_send_app, {"file_ids": ",".join(transferred_file_ids), "ignore_warn": 1})
         if not share_send_data.get('state'):
@@ -571,3 +524,238 @@ async def handle_emby_webhook():
         return jsonify({"status": "success", "message": "通知已收到"})
     else:
         return jsonify({"status": "skipped", "message": f"Event '{event_type}' is not handled."})
+
+# =======================================================================================
+# ======================== [核心新增] 批量转存功能后端代码 ========================
+# =======================================================================================
+
+@app.route('/api/share-files')
+async def api_share_files():
+    share_link = request.args.get('shareLink')
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('pageSize', 50, type=int)
+    cid = request.args.get('cid', '0')
+
+    if not share_link:
+        return jsonify({"error": "未提供分享链接"}), 400
+    if not p115_client:
+        return jsonify({"error": "115客户端未初始化"}), 500
+
+    try:
+        parsed_info = await asyncio.to_thread(share_extract_payload, share_link)
+        if not isinstance(parsed_info, dict) or "share_code" not in parsed_info:
+            raise ValueError("无法从URL中解析出有效的分享信息")
+
+        offset = (page - 1) * page_size
+        payload = {
+            "share_code": parsed_info['share_code'],
+            "receive_code": parsed_info.get('receive_code', ''),
+            "limit": page_size,
+            "offset": offset,
+            "cid": cid,
+            "o": "user_ptime", 
+            "asc": 0
+        }
+
+        log.debug(f"调用 share_snap_app, payload: {payload}")
+        snap_response = await asyncio.to_thread(p115_client.share_snap_app, payload)
+        log.info(f"115返回[share_snap_app]: {snap_response}")
+
+        if not snap_response.get("state"):
+            raise ValueError(f"获取分享文件列表失败: {snap_response.get('error', '未知错误')}")
+        
+        items_from_115 = snap_response.get("data", {}).get("list", [])
+        total_count = snap_response.get("data", {}).get("count", 0)
+
+        def format_file_size(size_bytes):
+            if size_bytes is None: return "N/A"
+            try:
+                size_bytes = int(size_bytes)
+                if size_bytes == 0: return "0 B"
+                size_name = ("B", "KB", "MB", "GB", "TB")
+                i = int(abs(size_bytes).bit_length() / 10)
+                p = 1024 ** i
+                s = round(size_bytes / p, 2)
+                return f"{s} {size_name[i]}"
+            except (ValueError, TypeError):
+                return "N/A"
+
+        files_to_return = []
+        for item in items_from_115:
+            file_id = item.get('fid')
+            file_name = item.get('fn')
+            timestamp = item.get('uppt')
+            
+            files_to_return.append({
+                "id": str(file_id),
+                "name": file_name,
+                "size": format_file_size(item.get('fs')),
+                "time": time.strftime("%Y-%m-%d %H:%M", time.localtime(int(timestamp))) if timestamp else "N/A",
+                "is_dir": 'sha1' not in item
+            })
+        
+        return jsonify({"files": files_to_return, "total": total_count})
+
+    except Exception as e:
+        log.error(f"处理分享链接 '{share_link}' 时失败", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+async def run_batch_transfer_task(task_id: str, task_payload: dict):
+    """
+    执行批量转存的后台任务，并实时更新任务状态。
+    """
+    share_link = task_payload.get('shareLink')
+    all_file_ids = task_payload.get('file_ids', [])
+    all_file_names = task_payload.get('file_names', [])
+    config = task_payload.get('config', {})
+    
+    batch_size = config.get('batchSize', 10)
+    interval = config.get('interval', 15)
+    category_name = config.get('category')
+    target_cid = APP_CONFIG.get('target_cid', '0')
+
+    def update_task_status(processed, log_message, status="running"):
+        batch_tasks[task_id]["processed"] = processed
+        batch_tasks[task_id]["logs"].append(log_message)
+        batch_tasks[task_id]["status"] = status
+        log.info(f"[任务ID: {task_id}] {log_message}")
+
+    if not all([share_link, all_file_ids, all_file_names, category_name, target_cid != '0']):
+        update_task_status(0, "任务启动失败：参数不完整。", "failed")
+        return
+    
+    if len(all_file_ids) != len(all_file_names):
+        update_task_status(0, "任务启动失败：文件ID和文件名数量不匹配。", "failed")
+        return
+
+    try:
+        parsed_info = await asyncio.to_thread(share_extract_payload, share_link)
+        share_code = parsed_info['share_code']
+        receive_code = parsed_info.get('receive_code', '')
+    except Exception as e:
+        update_task_status(0, f"任务启动失败：解析分享链接失败 - {e}", "failed")
+        return
+
+    total_files_to_process = len(all_file_ids)
+    batch_tasks[task_id]["total"] = total_files_to_process
+    update_task_status(0, f"任务启动成功，总计 {total_files_to_process} 个文件。")
+    
+    all_files = list(zip(all_file_ids, all_file_names))
+    processed_count = 0
+
+    for i in range(0, total_files_to_process, batch_size):
+        current_batch_files = all_files[i : i + batch_size]
+        current_batch_ids = [item[0] for item in current_batch_files]
+        current_batch_names = [item[1] for item in current_batch_files]
+
+        batch_num = i // batch_size + 1
+        total_batches = (total_files_to_process + batch_size - 1) // batch_size
+        update_task_status(processed_count, f"[进度] 开始处理第 {batch_num}/{total_batches} 批...")
+        
+        transferred_file_ids_in_batch = []
+        try:
+            # 1. 转存 (Receive)
+            receive_payload = { "share_code": share_code, "receive_code": receive_code, "file_id": ",".join(current_batch_ids), "cid": target_cid }
+            receive_data = await asyncio.to_thread(p115_client.share_receive_app, receive_payload)
+            if not receive_data.get('state'): raise ValueError(f"转存失败: {receive_data.get('error', '未知错误')}")
+            update_task_status(processed_count, f"第 {batch_num} 批转存成功。")
+
+            # 2. 等待1
+            await asyncio.sleep(10)
+            
+            list_data = (await asyncio.to_thread(p115_client.fs_files_app, {"cid": target_cid, "limit": batch_size + 10}, app='android')).get('data', [])
+            if not list_data: raise ValueError("在临时目录中未找到转存的文件")
+
+            transferred_files_info = []
+            for item in list_data:
+                fn = item.get('fn') or item.get('n')
+                if fn in current_batch_names:
+                     new_fid = str(item.get('fid') or item.get('cid'))
+                     transferred_files_info.append({'id': new_fid, 'name': fn})
+            
+            if not transferred_files_info: raise ValueError("验证转存失败：在临时目录中未能匹配到任何转存的文件。")
+            
+            transferred_file_ids_in_batch = [info['id'] for info in transferred_files_info]
+            file_names_in_batch = [info['name'] for info in transferred_files_info]
+
+            # 3. 分享 (Share)
+            share_payload = {"file_ids": ",".join(transferred_file_ids_in_batch), "ignore_warn": 1}
+            share_send_data = await asyncio.to_thread(p115_client.share_send_app, share_payload)
+            if not share_send_data.get('state'): raise ValueError(f"创建新分享失败: {share_send_data.get('error')}")
+            
+            share_data = share_send_data.get('data', {})
+            new_share_code = share_data.get('share_code')
+            if not new_share_code: raise ValueError("创建新分享后未能获取分享码")
+
+            await asyncio.to_thread(p115_client.share_update_app, {"share_code": new_share_code, "share_duration": -1})
+            update_task_status(processed_count, f"第 {batch_num} 批创建新分享成功。")
+
+            # 4. 记录
+            new_share = Shares( timestamp=time.strftime("%Y-%m-%d %H:%M:%S"), path_hierarchy=json.dumps([{"name": category_name}]), shared_cids=json.dumps(transferred_file_ids_in_batch),
+                share_title=" / ".join(file_names_in_batch), share_url=share_data.get("share_url"), share_code=new_share_code, receive_code=share_data.get("receive_code"), status=0 )
+            async with get_session() as session:
+                session.add(new_share)
+            
+            # 5. 等待2
+            await asyncio.sleep(10)
+
+        except Exception as e:
+            update_task_status(processed_count, f"[错误] 处理第 {batch_num} 批时失败: {e}", "running")
+        
+        finally:
+            # 6. 清理 (Delete)
+            if transferred_file_ids_in_batch:
+                try:
+                    delete_payload = {"file_ids": ",".join(transferred_file_ids_in_batch)}
+                    delete_response = await asyncio.to_thread(p115_client.fs_delete_app, delete_payload)
+                    if not delete_response.get("state"): raise ValueError(f"清理失败: {delete_response.get('error', '未知错误')}")
+                    update_task_status(processed_count, f"第 {batch_num} 批临时文件清理成功。")
+                except Exception as e_clean:
+                    update_task_status(processed_count, f"[错误] 清理第 {batch_num} 批临时文件时失败: {e_clean}", "running")
+            
+            processed_count += len(current_batch_ids)
+            update_task_status(processed_count, f"第 {batch_num} 批处理完毕。")
+
+        # 7. 等待3 (批次间间隔)
+        is_last_batch = (i + batch_size) >= total_files_to_process
+        if not is_last_batch:
+            update_task_status(processed_count, f"按设定休眠 {interval} 秒...")
+            await asyncio.sleep(interval)
+
+    update_task_status(processed_count, "所有批次处理完毕，任务结束！", "completed")
+
+
+@app.route('/api/batch-transfer/start', methods=['POST'])
+async def api_batch_transfer_start():
+    if not p115_client:
+        return jsonify({"error": "115客户端未初始化"}), 500
+    
+    data = await request.get_json()
+    
+    if not all([data.get('shareLink'), data.get('file_ids'), data.get('file_names'), data.get('config', {}).get('category')]):
+        return jsonify({"error": "启动任务失败：缺少必要的参数"}), 400
+
+    task_id = str(uuid.uuid4())
+    batch_tasks[task_id] = {
+        "status": "starting",
+        "total": len(data.get('file_ids')),
+        "processed": 0,
+        "logs": ["任务正在初始化..."]
+    }
+    
+    asyncio.create_task(run_batch_transfer_task(task_id, data))
+
+    return jsonify({"success": True, "message": "批量转存任务已在后台启动。", "taskId": task_id})
+
+@app.route('/api/batch-transfer/status')
+async def api_batch_transfer_status():
+    task_id = request.args.get('taskId')
+    if not task_id:
+        return jsonify({"error": "缺少 taskId"}), 400
+    
+    task_status = batch_tasks.get(task_id)
+    if not task_status:
+        return jsonify({"error": "未找到指定的任务"}), 404
+        
+    return jsonify(task_status)
